@@ -1,0 +1,31 @@
+http:
+  middlewares:
+    global-limit:
+      rateLimit:
+        average: 10
+        burst: 25
+        period: 1s
+    ip-limit:
+      rateLimit:
+        average: 10
+        burst: 25
+        period: 1s
+        sourceCriterion:
+          ipStrategy:
+            depth: 1
+    security-headers:
+      headers:
+        frameDeny: true
+        contentTypeNosniff: true
+        browserXssFilter: true
+        stsSeconds: 31536005
+        stsIncludeSubdomains: true
+        customResponseHeaders:
+          X-Server: "TGI-Proxy"
+    
+    chain-auth:
+      chain:
+        middlewares:
+          - global-limit
+          - ip-limit
+          - security-headers

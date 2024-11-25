@@ -1,0 +1,15 @@
+http:
+  middlewares:
+    auth-forward:
+      forwardAuth:
+        address: "http://auth-service:3000/validate"
+        authResponseHeaders:
+          - "X-Auth-Status"
+
+    chain-auth:
+      chain:
+        middlewares:
+          - auth-forward
+          - global-limit
+          - ip-limit
+          - security-headers 

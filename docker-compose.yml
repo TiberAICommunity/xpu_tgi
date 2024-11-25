@@ -1,0 +1,115 @@
+services:
+  auth-service:
+    build: 
+      context: ./services/auth
+    container_name: tgi_auth
+    environment:
+      - VALID_TOKEN=${VALID_TOKEN}
+    env_file:
+      - .env
+    networks:
+      - tgi_net
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    expose:
+      - "3000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.services.auth.loadbalancer.server.port=3000"
+      - "traefik.http.routers.auth.rule=PathPrefix(`/validate`)"
+    restart: unless-stopped
+
+  proxy:
+    image: traefik:v3.2.1
+    container_name: tgi_proxy
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:8000"
+      - "--accesslog=true"
+      - "--providers.file.directory=/etc/traefik/dynamic"
+    ports:
+      - "8000:8000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik:/etc/traefik/dynamic:ro
+    networks:
+      - tgi_net
+    depends_on:
+      - auth-service
+    env_file:
+      - .env
+    environment:
+      - VALID_TOKEN=${VALID_TOKEN}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8000/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+
+  tgi:
+    image: ghcr.io/huggingface/text-generation-inference:${TGI_VERSION}
+    container_name: ${MODEL_NAME}
+    restart: unless-stopped
+    privileged: true
+    cap_add:
+      - sys_nice
+    devices:
+      - /dev/dri:/dev/dri
+    ipc: host
+    shm_size: ${SHM_SIZE}
+    expose:
+      - "80"
+    networks:
+      - tgi_net
+    environment:
+      - VALID_TOKEN=${VALID_TOKEN}
+      - MODEL_NAME=${MODEL_NAME}
+      - MODEL_ID=${MODEL_ID}
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
+      - MAX_BATCH_SIZE=${MAX_BATCH_SIZE}
+      - MAX_TOTAL_TOKENS=${MAX_TOTAL_TOKENS}
+      - MAX_INPUT_LENGTH=${MAX_INPUT_LENGTH}
+      - MAX_WAITING_TOKENS=${MAX_WAITING_TOKENS}
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:80/v1/models || exit 1"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+      start_period: 600s
+    command: >
+      --model-id ${MODEL_ID}
+      --dtype bfloat16
+      --max-concurrent-requests ${MAX_CONCURRENT_REQUESTS}
+      --max-batch-size ${MAX_BATCH_SIZE}
+      --max-total-tokens ${MAX_TOTAL_TOKENS}
+      --max-input-length ${MAX_INPUT_LENGTH}
+      --max-waiting-tokens ${MAX_WAITING_TOKENS}
+      --cuda-graphs 0
+      --port 80
+      --json-output
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.tgi.rule=PathPrefix(`/generate`)"
+      - "traefik.http.routers.tgi.middlewares=chain-auth@file"
+      - "traefik.http.services.tgi.loadbalancer.server.port=80"
+    env_file:
+      - .env
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      proxy:
+        condition: service_healthy
+
+networks:
+  tgi_net:
+    name: ${MODEL_NAME}_network
+    driver: bridge 

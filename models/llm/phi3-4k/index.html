@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phi-3 4K - Intel AI Templates</title>
+    <link rel="stylesheet" href="../../../css/styles.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/themes/prism.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+</head>
+<body>
+    <header class="site-header">
+        <nav class="nav-container">
+            <div class="logo">
+                <a href="../../../">
+                    <img src="../../../assets/images/intel-logo.svg" alt="Intel Logo">
+                    <span>AI Templates</span>
+                </a>
+            </div>
+            <div class="nav-links">
+                <a href="https://github.com/rahulunair/xpu_tgi" class="github-link">
+                    View on GitHub
+                </a>
+            </div>
+        </nav>
+    </header>
+
+    <main class="model-detail">
+        <div class="model-header">
+            <div class="container">
+                <h1>Phi-3 4K</h1>
+                <div class="model-tags">
+                    <span class="tag">Text Generation</span>
+                    <span class="tag">4K Context</span>
+                    <span class="tag">Fast Inference</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+            <div class="model-content">
+                <section class="model-overview">
+                    <h2>Overview</h2>
+                    <p>${model.description}</p>
+                    
+                    <div class="capabilities">
+                        <h3>Capabilities</h3>
+                        <ul>
+                            ${model.capabilities.map(cap => `<li>${cap}</li>`).join('')}
+                        </ul>
+                    </div>
+
+                    <div class="configuration">
+                        <h3>Configuration</h3>
+                        <pre><code class="language-yaml">${formatConfig(model.configuration)}</code></pre>
+                    </div>
+
+                    <div class="deployment">
+                        <h3>Deployment</h3>
+                        <pre><code class="language-bash">./start.sh ${model.id}</code></pre>
+                    </div>
+
+                    <div class="license">
+                        <h3>License Information</h3>
+                        <p class="warning">${model.license_info.notice}</p>
+                        <a href="${model.license_info.url}" target="_blank">View License Details</a>
+                    </div>
+                </section>
+            </div>
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>Powered by <a href="https://github.com/rahulunair/xpu_tgi">XPU TGI</a></p>
+        </div>
+    </footer>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/prism.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-bash.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-python.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.24.1/components/prism-yaml.min.js"></script>
+</body>
+</html> 
