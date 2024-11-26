@@ -79,6 +79,7 @@ services:
       - MAX_TOTAL_TOKENS=${MAX_TOTAL_TOKENS}
       - MAX_INPUT_LENGTH=${MAX_INPUT_LENGTH}
       - MAX_WAITING_TOKENS=${MAX_WAITING_TOKENS}
+      - HF_HOME=/root/.cache/huggingface
     command: >
       --model-id ${MODEL_ID}
       --dtype bfloat16
@@ -102,6 +103,8 @@ services:
         condition: service_healthy
       proxy:
         condition: service_healthy
+    volumes:
+      - ${HF_CACHE_DIR:-/tmp/no_cache}:/root/.cache/huggingface:rw
 
 networks:
   tgi_net:

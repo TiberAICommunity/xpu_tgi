@@ -4,8 +4,42 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ENABLE_TUNNEL=false
+CACHE_MODELS=false
 MODEL_DIR=""
 SCRIPT_START_TIME=$(date +%s)
+
+cleanup_prompt() {
+    echo -e "\n\n\033[1;33m⚠️  Shutdown requested\033[0m"
+    echo -e "\nDo you want to clean up all services? (Y/n) "
+    read -r response
+    
+    if [[ "$response" =~ ^[Nn]$ ]]; then
+        echo -e "\n\033[1;33m📌 Note: Services are still running\033[0m"
+        echo "To clean up later, run: ./cleanup.sh ${MODEL_DIR}"
+        exit 0
+    fi
+    
+    echo -e "\n\033[1;34m→ Cleaning up services...\033[0m"
+    save_logs
+    
+    if [ "$ENABLE_TUNNEL" = true ] && [ -n "${TUNNEL_PID:-}" ]; then
+        echo "Stopping Cloudflare tunnel..."
+        kill $TUNNEL_PID 2>/dev/null || true
+    fi
+    
+    if [ -n "${MODEL_NAME:-}" ]; then
+        echo "Stopping containers..."
+        docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
+            --env-file "${ENV_FILE}" \
+            --env-file "${ROOT_ENV_FILE}" \
+            down --remove-orphans || true
+    fi
+    
+    success "Cleanup completed"
+    exit 0
+}
+
+trap cleanup_prompt SIGINT SIGTERM
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
@@ -93,6 +127,10 @@ while [[ $# -gt 0 ]]; do
             ENABLE_TUNNEL=true
             shift
             ;;
+        --cache-models)
+            CACHE_MODELS=true
+            shift
+            ;;
         *)
             MODEL_DIR="$1"
             shift
@@ -101,11 +139,12 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${MODEL_DIR}" ]]; then
-    echo "Usage: $0 [--remote-tunnel] <model_directory>"
-    echo "Example: $0 Flan-Ul2"
+    echo "Usage: $0 [--remote-tunnel] [--cache-models] <model_directory>"
+    echo "Example: $0 --cache-models Flan-Ul2"
     echo
     echo "Options:"
     echo "  --remote-tunnel    Enable Cloudflare tunnel (FOR EVALUATION ONLY)"
+    echo "  --cache-models     Cache models locally for faster reload"
     exit 1
 fi
 
@@ -222,7 +261,6 @@ validate_network() {
 }
 
 trap 'cleanup_and_exit $?' ERR
-
 info "Starting deployment for ${MODEL_NAME}..."
 log "Using configuration from: ${ENV_FILE}"
 log "MODEL_NAME: ${MODEL_NAME}"
@@ -247,7 +285,6 @@ if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
 fi
 
 check_service_ready() {
-    # First check if auth and proxy are running and healthy
     for service in "tgi_auth" "tgi_proxy"; do
         if ! docker ps --format '{{.Names}}' | grep -q "^${service}$"; then
             return 1
@@ -257,17 +294,11 @@ check_service_ready() {
             return 1
         fi
     done
-
-    # Then check if TGI container is running and model is loaded
     if ! docker ps --format '{{.Names}}' | grep -q "^${MODEL_NAME}$"; then
         return 1
     fi
-
-    # Show TGI logs continuously
     docker logs --tail=5 --follow "${MODEL_NAME}" 2>&1 | grep -v "^time=" &
     LOGS_PID=$!
-
-    # Check TGI logs for model loading completion
     if docker logs "${MODEL_NAME}" 2>&1 | grep -q "Connected to pipeline"; then
         kill $LOGS_PID 2>/dev/null || true
         return 0
@@ -289,14 +320,12 @@ while true; do
         echo "  - Authorization: Bearer ${VALID_TOKEN}"
         echo "  - Content-Type: application/json"
         
-        if [ "$ENABLE_TUNNEL" = false ]; then
+        if [ "$ENABLE_TUNNEL" = true ]; then
+            start_tunnel
+        else
             echo -e "\n\033[1;33m📌 Remote Access Tip:\033[0m"
             echo "To access from outside this machine, append to your SSH command:"
             echo "  -L 8000:localhost:8000"
-        fi
-        
-        if [ "$ENABLE_TUNNEL" = true ]; then
-            start_tunnel
         fi
         exit 0
     fi
@@ -304,4 +333,16 @@ while true; do
 done
 
 error "Service failed to become ready within ${MAX_WAIT} seconds"
+
+setup_model_cache() {
+    local cache_dir="${SCRIPT_DIR}/model_cache"
+    info "Setting up model cache directory..."
+    mkdir -p "${cache_dir}"
+    export HF_CACHE_DIR="${cache_dir}"
+    success "Model caching enabled at: ${cache_dir}"
+}
+
+if [ "$CACHE_MODELS" = true ]; then
+    setup_model_cache
+fi
 
