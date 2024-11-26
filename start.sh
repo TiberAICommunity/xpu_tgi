@@ -8,6 +8,57 @@ CACHE_MODELS=false
 MODEL_DIR=""
 SCRIPT_START_TIME=$(date +%s)
 
+show_help() {
+    echo "Usage: $0 [OPTIONS] <model_directory>"
+    echo
+    echo "Start the TGI service with the specified model"
+    echo
+    echo "Options:"
+    echo "  -h, --help         Show this help message"
+    echo "  --remote-tunnel    Enable Cloudflare tunnel (FOR EVALUATION ONLY)"
+    echo "  --cache-models     Cache models locally for faster reload"
+    echo
+    echo "Examples:"
+    echo "  $0 Phi-3-mini"
+    echo "  $0 --cache-models Phi-3-mini"
+    echo "  $0 --remote-tunnel Phi-3-mini"
+    echo
+    echo "Note:"
+    echo "  Model directory should be relative to ./models/"
+    echo "  Use CTRL+C to gracefully stop the service"
+    exit 0
+}
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_help
+            ;;
+        --remote-tunnel)
+            ENABLE_TUNNEL=true
+            shift
+            ;;
+        --cache-models)
+            CACHE_MODELS=true
+            shift
+            ;;
+        -*)
+            echo "Unknown option: $1"
+            show_help
+            ;;
+        *)
+            MODEL_DIR="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "${MODEL_DIR}" ]]; then
+    show_help
+fi
+
+MODEL_DIR="models/$MODEL_DIR"
+
 cleanup_prompt() {
     echo -e "\n\n\033[1;33m⚠️  Shutdown requested\033[0m"
     echo -e "\nDo you want to clean up all services? (Y/n) "
