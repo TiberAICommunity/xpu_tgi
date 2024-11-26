@@ -150,7 +150,7 @@ setup_cloudflared() {
     read -r response
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
         echo "Aborting tunnel setup"
-        cleanup_and_exit 1
+        return 1
     fi
 
     if ! sudo -n true 2>/dev/null; then
@@ -159,9 +159,6 @@ setup_cloudflared() {
         echo
         echo "Add the following to your existing SSH command:"
         echo "  -L 8000:localhost:8000"
-        echo
-        echo "Example: If your current SSH command is 'ssh user@server -p 2222'"
-        echo "Change to: 'ssh user@server -p 2222 -L 8000:localhost:8000'"
         echo
         return 1
     fi
@@ -177,6 +174,7 @@ setup_cloudflared() {
         fi
         rm -f cloudflared.deb
     fi
+    return 0
 }
 
 start_tunnel() {
