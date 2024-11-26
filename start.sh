@@ -3,13 +3,11 @@
 set -euo pipefail
 IFS=$'\n\t'
 
-# Global variables
 CACHE_MODELS=false
 MODEL_DIR=""
 SCRIPT_START_TIME=$(date +%s)
 INTERVAL=5
 
-# Function definitions
 show_help() {
     echo "Usage: $0 [OPTIONS] <model_directory>"
     echo
@@ -294,7 +292,6 @@ follow_tgi_logs() {
             log_lines=$(docker logs "${MODEL_NAME}" 2>&1 | wc -l)
         fi
         
-        # Check if service is ready
         if check_service_ready; then
             return 0
         fi
@@ -302,10 +299,8 @@ follow_tgi_logs() {
     done
 }
 
-# Set up trap for CTRL+C and SIGTERM
 trap cleanup_prompt SIGINT SIGTERM
 
-# Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
@@ -339,15 +334,12 @@ if [[ -z "${MODEL_DIR}" ]]; then
     show_help
 fi
 
-# Setup paths and validate
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-# Initial validations
 validate_docker
 check_port_available
 validate_model_path
 
-# Setup environment files
 ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
 if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
     error "ERROR: .env file not found at ${ROOT_ENV_FILE}"
@@ -358,13 +350,11 @@ if [[ ! -f "${ENV_FILE}" ]]; then
     error "ERROR: model.env file not found at ${ENV_FILE}"
 fi
 
-# Source the environment files
 set -a
 source "${ENV_FILE}"
 source "${ROOT_ENV_FILE}"
 set +a
 
-# Validate required variables
 for var in MODEL_NAME SHM_SIZE; do
     if [[ -z "${!var:-}" ]]; then
         error "ERROR: ${var} not set in ${ENV_FILE}"
@@ -375,7 +365,6 @@ if [ "$CACHE_MODELS" = true ]; then
     setup_model_cache
 fi
 
-# Start services
 info "Starting deployment for ${MODEL_NAME}..."
 log "Using configuration from: ${ENV_FILE}"
 log "MODEL_NAME: ${MODEL_NAME}"
@@ -392,7 +381,6 @@ if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
     error "Failed to start services"
 fi
 
-# Show API preview before logs
 show_api_preview
 
 info "This may take several minutes while the model downloads and loads..."
