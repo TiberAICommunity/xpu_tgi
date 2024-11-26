@@ -5,8 +5,8 @@ IFS=$'\n\t'
 
 ENABLE_TUNNEL=false
 MODEL_DIR=""
+SCRIPT_START_TIME=$(date +%s)
 
-# Function definitions
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
@@ -21,18 +21,62 @@ success() {
 
 error() {
     echo -e "\n\033[1;31m❌ $1\033[0m"
+    save_logs
     cleanup_and_exit 1
 }
+
+save_logs() {
+    local log_dir="${SCRIPT_DIR}/logs"
+    local timestamp=$(date '+%Y%m%d_%H%M%S')
+    local start_time=${SCRIPT_START_TIME:-$(date +%s)}
+    local end_time=$(date +%s)
+    local duration=$((end_time - start_time))
+    mkdir -p "${log_dir}"
+    echo -e "\n\033[1;33m📋 Saving service logs (Runtime: ${duration}s)\033[0m"
+    {
+        echo "=== Execution Summary ==="
+        echo "Start time: $(date -d @${start_time} '+%Y-%m-%d %H:%M:%S')"
+        echo "End time: $(date -d @${end_time} '+%Y-%m-%d %H:%M:%S')"
+        echo "Total runtime: ${duration} seconds"
+        echo "Model: ${MODEL_NAME}"
+        echo "=======================" 
+    } > "${log_dir}/execution_${timestamp}.log"
+    
+    for service in "tgi_proxy" "tgi_auth" "${MODEL_NAME}"; do
+        if docker ps -a --format '{{.Names}}' | grep -q "^${service}$"; then
+            echo -e "\n=== ${service} Logs ===" >> "${log_dir}/service_logs_${timestamp}.log"
+            echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')" >> "${log_dir}/service_logs_${timestamp}.log"
+            docker logs "${service}" &>> "${log_dir}/service_logs_${timestamp}.log"
+            echo -e "\n=== End ${service} Logs ===\n" >> "${log_dir}/service_logs_${timestamp}.log"
+        fi
+    done
+    
+    {
+        echo -e "\n=== Docker Compose Status ==="
+        echo "Timestamp: $(date '+%Y-%m-%d %H:%M:%S')"
+        docker compose -f "${SCRIPT_DIR}/docker-compose.yml" ps
+        echo -e "\n=== Container Details ==="
+        for service in "tgi_proxy" "tgi_auth" "${MODEL_NAME}"; do
+            echo -e "\n${service}:"
+            docker inspect "${service}" 2>/dev/null | grep -A 5 "State"
+        done
+    } >> "${log_dir}/service_logs_${timestamp}.log"
+    
+    echo -e "\033[1;32m✓ Logs saved to: ${log_dir}/service_logs_${timestamp}.log\033[0m"
+}
+
 
 cleanup_and_exit() {
     local exit_code=$1
     
-    # Cleanup tunnel if it was started
+    if [ "${exit_code}" -ne 0 ]; then
+        save_logs
+    fi
+    
     if [ "$ENABLE_TUNNEL" = true ] && [ -n "${TUNNEL_PID:-}" ]; then
         kill $TUNNEL_PID 2>/dev/null || true
     fi
     
-    # Cleanup docker resources if they were created
     if [ -n "${MODEL_NAME:-}" ]; then
         docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
             --env-file "${ENV_FILE}" \
@@ -43,7 +87,6 @@ cleanup_and_exit() {
     exit "${exit_code}"
 }
 
-# Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --remote-tunnel)
@@ -57,7 +100,6 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Validate arguments
 if [[ -z "${MODEL_DIR}" ]]; then
     echo "Usage: $0 [--remote-tunnel] <model_directory>"
     echo "Example: $0 Flan-Ul2"
@@ -261,3 +303,4 @@ while [ $elapsed -lt $MAX_WAIT ]; do
 done
 
 error "Service failed to become ready within ${MAX_WAIT} seconds"
+
