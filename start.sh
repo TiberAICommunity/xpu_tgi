@@ -386,6 +386,12 @@ if [ "$ENABLE_TUNNEL" = true ]; then
     if ! setup_cloudflared; then
         ENABLE_TUNNEL=false
         info "Continuing without tunnel setup..."
+    else
+        start_tunnel
+        if [ -z "${TUNNEL_URL:-}" ]; then
+            error "Failed to establish tunnel"
+        fi
+        info "Tunnel established at: ${TUNNEL_URL}"
     fi
 fi
 
@@ -415,18 +421,25 @@ while true; do
     if check_service_ready; then
         success "🚀 Service is ready!"
         echo -e "\n\033[1;33m📌 Service Access Information:\033[0m"
-        echo -e "\033[1;37mEndpoint: \033[0mhttp://localhost:8000/generate"
+        
+        if [ "$ENABLE_TUNNEL" = true ] && [ -n "${TUNNEL_URL:-}" ]; then
+            echo -e "\n\033[1;33m📌 Remote Access Information:\033[0m"
+            echo -e "\033[1;37mEndpoint: \033[0m${TUNNEL_URL}/generate"
+        else
+            echo -e "\033[1;37mEndpoint: \033[0mhttp://localhost:8000/generate"
+            echo -e "\n\033[1;33m📌 Remote Access Tip:\033[0m"
+            echo "To access from outside this machine, append to your SSH command:"
+            echo "  -L 8000:localhost:8000"
+        fi
+        
         echo -e "\033[1;37mMethod:   \033[0mPOST"
         echo -e "\033[1;37mHeaders:  \033[0m"
         echo "  - Authorization: Bearer ${VALID_TOKEN}"
         echo "  - Content-Type: application/json"
         
         if [ "$ENABLE_TUNNEL" = true ]; then
-            start_tunnel
-        else
-            echo -e "\n\033[1;33m📌 Remote Access Tip:\033[0m"
-            echo "To access from outside this machine, append to your SSH command:"
-            echo "  -L 8000:localhost:8000"
+            echo -e "\n\033[1;31m⚠️  IMPORTANT: This tunnel is for evaluation only!\033[0m"
+            wait $TUNNEL_PID
         fi
         exit 0
     fi
