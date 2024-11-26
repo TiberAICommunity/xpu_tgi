@@ -29,36 +29,6 @@ show_help() {
     exit 0
 }
 
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        -h|--help)
-            show_help
-            ;;
-        --remote-tunnel)
-            ENABLE_TUNNEL=true
-            shift
-            ;;
-        --cache-models)
-            CACHE_MODELS=true
-            shift
-            ;;
-        -*)
-            echo "Unknown option: $1"
-            show_help
-            ;;
-        *)
-            MODEL_DIR="$1"
-            shift
-            ;;
-    esac
-done
-
-if [[ -z "${MODEL_DIR}" ]]; then
-    show_help
-fi
-
-MODEL_DIR="models/$MODEL_DIR"
-
 cleanup_prompt() {
     echo -e "\n\n\033[1;33m⚠️  Shutdown requested\033[0m"
     echo -e "\nDo you want to clean up all services? (Y/n) "
@@ -90,8 +60,6 @@ cleanup_prompt() {
     exit 0
 }
 
-trap cleanup_prompt SIGINT SIGTERM
-
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
 }
@@ -106,7 +74,11 @@ success() {
 
 error() {
     echo -e "\n\033[1;31m❌ $1\033[0m"
-    save_logs
+    
+    if [ -n "${MODEL_NAME:-}" ]; then
+        save_logs
+    fi
+    
     cleanup_and_exit 1
 }
 
@@ -116,14 +88,19 @@ save_logs() {
     local start_time=${SCRIPT_START_TIME:-$(date +%s)}
     local end_time=$(date +%s)
     local duration=$((end_time - start_time))
+    
     mkdir -p "${log_dir}"
+    
     echo -e "\n\033[1;33m📋 Saving service logs (Runtime: ${duration}s)\033[0m"
+    
     {
         echo "=== Execution Summary ==="
         echo "Start time: $(date -d @${start_time} '+%Y-%m-%d %H:%M:%S')"
         echo "End time: $(date -d @${end_time} '+%Y-%m-%d %H:%M:%S')"
         echo "Total runtime: ${duration} seconds"
-        echo "Model: ${MODEL_NAME}"
+        if [ -n "${MODEL_NAME:-}" ]; then
+            echo "Model: ${MODEL_NAME}"
+        fi
         echo "=======================" 
     } > "${log_dir}/execution_${timestamp}.log"
     
@@ -150,7 +127,6 @@ save_logs() {
     echo -e "\033[1;32m✓ Logs saved to: ${log_dir}/service_logs_${timestamp}.log\033[0m"
 }
 
-
 cleanup_and_exit() {
     local exit_code=$1
     
@@ -171,65 +147,6 @@ cleanup_and_exit() {
     
     exit "${exit_code}"
 }
-
-while [[ $# -gt 0 ]]; do
-    case $1 in
-        --remote-tunnel)
-            ENABLE_TUNNEL=true
-            shift
-            ;;
-        --cache-models)
-            CACHE_MODELS=true
-            shift
-            ;;
-        *)
-            MODEL_DIR="$1"
-            shift
-            ;;
-    esac
-done
-
-if [[ -z "${MODEL_DIR}" ]]; then
-    echo "Usage: $0 [--remote-tunnel] [--cache-models] <model_directory>"
-    echo "Example: $0 --cache-models Flan-Ul2"
-    echo
-    echo "Options:"
-    echo "  --remote-tunnel    Enable Cloudflare tunnel (FOR EVALUATION ONLY)"
-    echo "  --cache-models     Cache models locally for faster reload"
-    exit 1
-fi
-
-MODEL_DIR="models/$MODEL_DIR"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-MAX_WAIT=600
-INTERVAL=10
-
-ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
-if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
-    error "ERROR: .env file not found at ${ROOT_ENV_FILE}"
-fi
-
-if ! VALID_TOKEN=$(grep -o '^VALID_TOKEN=.*' "${ROOT_ENV_FILE}" | cut -d= -f2); then
-    error "ERROR: VALID_TOKEN not found in ${ROOT_ENV_FILE}"
-fi
-export VALID_TOKEN
-
-ENV_FILE="${SCRIPT_DIR}/${MODEL_DIR}/config/model.env"
-if [[ ! -f "${ENV_FILE}" ]]; then
-    error "ERROR: model.env file not found at ${ENV_FILE}"
-fi
-
-set -a
-if ! source "${ENV_FILE}"; then
-    error "ERROR: Failed to source ${ENV_FILE}"
-fi
-set +a
-
-for var in MODEL_NAME SHM_SIZE; do
-    if [[ -z "${!var:-}" ]]; then
-        error "ERROR: ${var} not set in ${ENV_FILE}"
-    fi
-done
 
 setup_cloudflared() {
     echo -e "\n\033[1;33m⚠️  CLOUDFLARE TUNNEL NOTICE:\033[0m"
@@ -290,6 +207,64 @@ start_tunnel() {
     fi
 }
 
+setup_model_cache() {
+    local cache_dir="${SCRIPT_DIR}/model_cache"
+    info "Setting up model cache directory..."
+    mkdir -p "${cache_dir}"
+    export HF_CACHE_DIR="${cache_dir}"
+    success "Model caching enabled at: ${cache_dir}"
+}
+
+check_model_env() {
+    local model_path="$1"
+    local env_file="${model_path}/config/model.env"
+    
+    if [[ ! -f "${env_file}" ]]; then
+        echo -e "\n\033[1;31m❌ Model configuration not found!\033[0m"
+        echo -e "\nExpected config file: ${env_file}"
+        echo -e "\n\033[1;33m📌 Available models:\033[0m"
+        
+        if [ -d "models" ]; then
+            local models_found=false
+            for dir in models/*/; do
+                if [ -f "${dir}config/model.env" ]; then
+                    echo "  - $(basename "${dir}")"
+                    models_found=true
+                fi
+            done
+            
+            if [ "$models_found" = false ]; then
+                echo "  No configured models found"
+            fi
+        else
+            echo "  No models directory found"
+        fi
+        
+        echo -e "\n\033[1;37mTo add a new model:\033[0m"
+        echo "1. Create directory: mkdir -p models/YOUR_MODEL_NAME/config"
+        echo "2. Create config:    cp templates/model.env.template models/YOUR_MODEL_NAME/config/model.env"
+        echo "3. Edit config:      nano models/YOUR_MODEL_NAME/config/model.env"
+        echo
+        exit 1
+    fi
+}
+
+validate_model_path() {
+    if [[ $MODEL_DIR != models/* ]]; then
+        MODEL_DIR="models/$MODEL_DIR"
+    fi
+    
+    info "Checking model path: ${SCRIPT_DIR}/${MODEL_DIR}"
+    
+    if [[ ! -d "${SCRIPT_DIR}/${MODEL_DIR}" ]]; then
+        error "Model directory not found: ${SCRIPT_DIR}/${MODEL_DIR}"
+    fi
+    
+    if [[ ! -f "${SCRIPT_DIR}/${MODEL_DIR}/config/model.env" ]]; then
+        check_model_env "${SCRIPT_DIR}/${MODEL_DIR}"
+    fi
+}
+
 validate_network() {
     local network_name="${MODEL_NAME}_network"
 
@@ -311,12 +286,95 @@ validate_network() {
     fi
 }
 
-trap 'cleanup_and_exit $?' ERR
-info "Starting deployment for ${MODEL_NAME}..."
-log "Using configuration from: ${ENV_FILE}"
-log "MODEL_NAME: ${MODEL_NAME}"
-log "SHM_SIZE: ${SHM_SIZE}"
-log "VALID_TOKEN is set: ${VALID_TOKEN:+yes}"
+check_service_ready() {
+    # First check if auth and proxy are running and healthy
+    for service in "tgi_auth" "tgi_proxy"; do
+        if ! docker ps --format '{{.Names}}' | grep -q "^${service}$"; then
+            return 1
+        fi
+        health_status=$(docker inspect --format='{{.State.Health.Status}}' "${service}" 2>/dev/null)
+        if [ "$health_status" != "healthy" ]; then
+            return 1
+        fi
+    done
+
+    # Then check if TGI container is running and model is loaded
+    if ! docker ps --format '{{.Names}}' | grep -q "^${MODEL_NAME}$"; then
+        return 1
+    fi
+
+    # Show TGI logs continuously
+    docker logs --tail=5 --follow "${MODEL_NAME}" 2>&1 | grep -v "^time=" &
+    LOGS_PID=$!
+
+    # Check TGI logs for model loading completion
+    if docker logs "${MODEL_NAME}" 2>&1 | grep -q "Connected to pipeline"; then
+        kill $LOGS_PID 2>/dev/null || true
+        return 0
+    fi
+
+    return 1
+}
+
+trap cleanup_prompt SIGINT SIGTERM
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -h|--help)
+            show_help
+            ;;
+        --remote-tunnel)
+            ENABLE_TUNNEL=true
+            shift
+            ;;
+        --cache-models)
+            CACHE_MODELS=true
+            shift
+            ;;
+        -*)
+            echo "Unknown option: $1"
+            show_help
+            ;;
+        *)
+            MODEL_DIR="$1"
+            shift
+            ;;
+    esac
+done
+
+if [[ -z "${MODEL_DIR}" ]]; then
+    show_help
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+validate_model_path
+
+ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
+if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
+    error "ERROR: .env file not found at ${ROOT_ENV_FILE}"
+fi
+
+if ! VALID_TOKEN=$(grep -o '^VALID_TOKEN=.*' "${ROOT_ENV_FILE}" | cut -d= -f2); then
+    error "ERROR: VALID_TOKEN not found in ${ROOT_ENV_FILE}"
+fi
+export VALID_TOKEN
+
+ENV_FILE="${SCRIPT_DIR}/${MODEL_DIR}/config/model.env"
+if [[ ! -f "${ENV_FILE}" ]]; then
+    error "ERROR: model.env file not found at ${ENV_FILE}"
+fi
+
+set -a
+if ! source "${ENV_FILE}"; then
+    error "ERROR: Failed to source ${ENV_FILE}"
+fi
+set +a
+
+for var in MODEL_NAME SHM_SIZE; do
+    if [[ -z "${!var:-}" ]]; then
+        error "ERROR: ${var} not set in ${ENV_FILE}"
+    fi
+done
 
 if [ "$ENABLE_TUNNEL" = true ]; then
     if ! setup_cloudflared; then
@@ -324,6 +382,16 @@ if [ "$ENABLE_TUNNEL" = true ]; then
         info "Continuing without tunnel setup..."
     fi
 fi
+
+if [ "$CACHE_MODELS" = true ]; then
+    setup_model_cache
+fi
+
+info "Starting deployment for ${MODEL_NAME}..."
+log "Using configuration from: ${ENV_FILE}"
+log "MODEL_NAME: ${MODEL_NAME}"
+log "SHM_SIZE: ${SHM_SIZE}"
+log "VALID_TOKEN is set: ${VALID_TOKEN:+yes}"
 
 validate_network
 
@@ -335,30 +403,6 @@ if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
     error "Failed to start services"
 fi
 
-check_service_ready() {
-    for service in "tgi_auth" "tgi_proxy"; do
-        if ! docker ps --format '{{.Names}}' | grep -q "^${service}$"; then
-            return 1
-        fi
-        health_status=$(docker inspect --format='{{.State.Health.Status}}' "${service}" 2>/dev/null)
-        if [ "$health_status" != "healthy" ]; then
-            return 1
-        fi
-    done
-    if ! docker ps --format '{{.Names}}' | grep -q "^${MODEL_NAME}$"; then
-        return 1
-    fi
-    docker logs --tail=5 --follow "${MODEL_NAME}" 2>&1 | grep -v "^time=" &
-    LOGS_PID=$!
-    if docker logs "${MODEL_NAME}" 2>&1 | grep -q "Connected to pipeline"; then
-        kill $LOGS_PID 2>/dev/null || true
-        return 0
-    fi
-
-    return 1
-}
-
-info "Starting ${MODEL_NAME} service..."
 info "This may take several minutes while the model downloads and loads..."
 
 while true; do
@@ -382,18 +426,4 @@ while true; do
     fi
     sleep $INTERVAL
 done
-
-error "Service failed to become ready within ${MAX_WAIT} seconds"
-
-setup_model_cache() {
-    local cache_dir="${SCRIPT_DIR}/model_cache"
-    info "Setting up model cache directory..."
-    mkdir -p "${cache_dir}"
-    export HF_CACHE_DIR="${cache_dir}"
-    success "Model caching enabled at: ${cache_dir}"
-}
-
-if [ "$CACHE_MODELS" = true ]; then
-    setup_model_cache
-fi
 
