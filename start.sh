@@ -157,16 +157,24 @@ setup_cloudflared() {
     echo -e "\nDo you wish to continue? (y/N) "
     read -r response
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
-        echo "Aborting tunnel setup"
+        echo -e "\n\033[1;33m📌 Tunnel setup cancelled. You have these options:\033[0m"
+        echo "1. Run without tunnel to access the service locally:"
+        echo "   ./start.sh ${MODEL_DIR##*/}"
+        echo
+        echo "2. Use SSH tunnel for remote access:"
+        echo "   ssh -L 8000:localhost:8000 user@server"
+        echo
         return 1
     fi
 
     if ! sudo -n true 2>/dev/null; then
-        echo -e "\n\033[1;33m📌 No sudo access detected!\033[0m"
-        echo -e "\033[1;37mTo access the service from outside this machine:\033[0m"
+        echo -e "\n\033[1;31m❌ No sudo access detected!\033[0m"
+        echo -e "\n\033[1;33m📌 You have these options:\033[0m"
+        echo "1. Run without tunnel to access the service locally:"
+        echo "   ./start.sh ${MODEL_DIR##*/}"
         echo
-        echo "Add the following to your existing SSH command:"
-        echo "  -L 8000:localhost:8000"
+        echo "2. Use SSH tunnel for remote access:"
+        echo "   ssh -L 8000:localhost:8000 user@server"
         echo
         return 1
     fi
@@ -383,16 +391,25 @@ for var in MODEL_NAME SHM_SIZE; do
 done
 
 if [ "$ENABLE_TUNNEL" = true ]; then
+    info "Setting up remote tunnel..."
     if ! setup_cloudflared; then
-        ENABLE_TUNNEL=false
-        info "Continuing without tunnel setup..."
-    else
-        start_tunnel
-        if [ -z "${TUNNEL_URL:-}" ]; then
-            error "Failed to establish tunnel"
-        fi
-        info "Tunnel established at: ${TUNNEL_URL}"
+        exit 1
     fi
+    
+    info "Starting tunnel..."
+    if ! start_tunnel; then
+        echo -e "\n\033[1;31m❌ Failed to establish tunnel\033[0m"
+        echo -e "\n\033[1;33m📌 You have these options:\033[0m"
+        echo "1. Run without tunnel to access the service locally:"
+        echo "   ./start.sh ${MODEL_DIR##*/}"
+        echo
+        echo "2. Use SSH tunnel for remote access:"
+        echo "   ssh -L 8000:localhost:8000 user@server"
+        echo
+        exit 1
+    fi
+    
+    success "Tunnel established at: ${TUNNEL_URL}"
 fi
 
 if [ "$CACHE_MODELS" = true ]; then
