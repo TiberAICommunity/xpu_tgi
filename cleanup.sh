@@ -34,7 +34,6 @@ cleanup() {
         docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" down --timeout 30 || true
     fi
 
-
     local containers=("${MODEL_NAME}" "tgi_auth" "tgi_proxy")
     for container in "${containers[@]}"; do
         if docker ps -a --format '{{.Names}}' | grep -q "^${container}$"; then
@@ -49,23 +48,32 @@ cleanup() {
         docker network rm "${network_name}" || true
     fi
 
-    local ports=("8000" "3000" "${PORT}")
-    for port in "${ports[@]}"; do
-        local pid
-        pid=$(lsof -ti:"${port}" 2>/dev/null || true)
-        if [[ -n "${pid}" ]]; then
-            log "Cleaning up process using port ${port}..."
-            kill -9 "${pid}" 2>/dev/null || true
-        fi
-    done
-
+    # Only try to kill processes if running as root
+    if [ "$EUID" -eq 0 ]; then
+        local ports=("8000" "3000")
+        for port in "${ports[@]}"; do
+            local pid
+            pid=$(lsof -ti:"${port}" 2>/dev/null || true)
+            if [[ -n "${pid}" ]]; then
+                log "Cleaning up process using port ${port}..."
+                kill -9 "${pid}" 2>/dev/null || true
+            fi
+        done
+    fi
 
     log "Cleaning up dangling volumes..."
     docker volume prune -f || true
+    
+    # If not root, provide SSH port forwarding hint
+    if [ "$EUID" -ne 0 ]; then
+        echo -e "\n\033[1;33m📌 Remote Access Tip:\033[0m"
+        echo "If you're using SSH port forwarding, remember to remove"
+        echo "'-L 8000:localhost:8000' from your SSH command"
+    fi
+    
     log "Cleanup completed"
     return $exit_code
 }
-
 
 trap cleanup EXIT
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
