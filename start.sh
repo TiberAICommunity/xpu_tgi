@@ -7,6 +7,7 @@ ENABLE_TUNNEL=false
 CACHE_MODELS=false
 MODEL_DIR=""
 SCRIPT_START_TIME=$(date +%s)
+INTERVAL=10
 
 show_help() {
     echo "Usage: $0 [OPTIONS] <model_directory>"
@@ -186,22 +187,27 @@ setup_cloudflared() {
 
 start_tunnel() {
     echo -e "\n\033[1;34m→ Starting Cloudflare tunnel...\033[0m"
-    if ! cloudflared tunnel --url http://localhost:8000 & TUNNEL_PID=$!; then
+    if ! cloudflared tunnel --url http://localhost:8000 2>&1 & TUNNEL_PID=$!; then
         error "Failed to start Cloudflare tunnel"
     fi
+    local max_attempts=30
+    local attempt=0
+    local tunnel_ready=false
+    while [ $attempt -lt $max_attempts ]; do
+        if TUNNEL_URL=$(cloudflared tunnel --url http://localhost:8000 2>&1); then
+            echo "${TUNNEL_URL}" 
+            if echo "${TUNNEL_URL}" | grep -q 'https://.*\.trycloudflare\.com'; then
+                TUNNEL_URL=$(echo "${TUNNEL_URL}" | grep -o 'https://.*\.trycloudflare\.com')
+                tunnel_ready=true
+                break
+            fi
+        fi
+        sleep 1
+        ((attempt++))
+    done
     
-    sleep 8
-    TUNNEL_URL=$(cloudflared tunnel --url http://localhost:8000 2>&1 | grep -o 'https://.*\.trycloudflare\.com' || echo "")
-    
-    if [ -n "$TUNNEL_URL" ]; then
-        echo -e "\n\033[1;32m✓ Tunnel established!\033[0m"
-        echo -e "\033[1;33m📌 Remote Access Information:\033[0m"
-        echo -e "\033[1;37mEndpoint: \033[0m${TUNNEL_URL}/generate"
-        echo -e "\033[1;37mMethod:   \033[0mPOST"
-        echo -e "\033[1;37mHeaders:  \033[0m"
-        echo "  - Authorization: Bearer ${VALID_TOKEN}"
-        echo "  - Content-Type: application/json"
-        echo -e "\n\033[1;31m⚠️  IMPORTANT: This tunnel is for evaluation only!\033[0m"
+    if [ "$tunnel_ready" = true ]; then
+        success "Tunnel established!"
     else
         error "Failed to establish tunnel"
     fi
