@@ -143,11 +143,16 @@ cleanup_prompt() {
     save_logs
     
     if [ -n "${MODEL_NAME:-}" ]; then
-        echo "Stopping containers..."
+        echo "Stopping containers and cleaning up..."
         docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
             --env-file "${ENV_FILE}" \
             --env-file "${ROOT_ENV_FILE}" \
             down --remove-orphans || true
+        local network_name="${MODEL_NAME}_network"
+        if docker network ls --format '{{.Name}}' | grep -q "^${network_name}$"; then
+            echo "Removing network: ${network_name}"
+            docker network rm "${network_name}" || true
+        fi
     fi
     
     success "Cleanup completed"
@@ -158,11 +163,16 @@ cleanup_and_exit() {
     local exit_code=${1:-0}
     
     if [ -n "${MODEL_NAME:-}" ]; then
-        echo "Stopping containers..."
+        echo "Stopping containers and cleaning up..."
         docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
             --env-file "${ENV_FILE}" \
             --env-file "${ROOT_ENV_FILE}" \
             down --remove-orphans || true
+        local network_name="${MODEL_NAME}_network"
+        if docker network ls --format '{{.Name}}' | grep -q "^${network_name}$"; then
+            echo "Removing network: ${network_name}"
+            docker network rm "${network_name}" || true
+        fi
     fi
     
     exit "${exit_code}"
