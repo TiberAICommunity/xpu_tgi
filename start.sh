@@ -249,30 +249,41 @@ if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
 fi
 
 check_service_ready() {
-    local containers_running=true
-    for service in "tgi_proxy" "tgi_auth" "${MODEL_NAME}"; do
+    # First check if auth and proxy are running and healthy
+    for service in "tgi_auth" "tgi_proxy"; do
         if ! docker ps --format '{{.Names}}' | grep -q "^${service}$"; then
-            containers_running=false
-            break
+            return 1
+        fi
+        health_status=$(docker inspect --format='{{.State.Health.Status}}' "${service}" 2>/dev/null)
+        if [ "$health_status" != "healthy" ]; then
+            return 1
         fi
     done
 
-    if [ "$containers_running" = true ]; then
-        if docker logs "${MODEL_NAME}" 2>&1 | grep -q "Connected to pipeline"; then
-            return 0
-        fi
+    # Then check if TGI container is running and model is loaded
+    if ! docker ps --format '{{.Names}}' | grep -q "^${MODEL_NAME}$"; then
+        return 1
     fi
+
+    # Show TGI logs continuously
+    docker logs --tail=5 --follow "${MODEL_NAME}" 2>&1 | grep -v "^time=" &
+    LOGS_PID=$!
+
+    # Check TGI logs for model loading completion
+    if docker logs "${MODEL_NAME}" 2>&1 | grep -q "Connected to pipeline"; then
+        kill $LOGS_PID 2>/dev/null || true
+        return 0
+    fi
+
     return 1
 }
 
 info "Starting ${MODEL_NAME} service..."
-info "This may take a few minutes while the model loads..."
-elapsed=0
+info "This may take several minutes while the model downloads and loads..."
 
-while [ $elapsed -lt $MAX_WAIT ]; do
+while true; do
     if check_service_ready; then
-        echo -e "\n-------------------------------------------"
-        success "🚀 Service is ready to accept requests!"
+        success "🚀 Service is ready!"
         echo -e "\n\033[1;33m📌 Service Access Information:\033[0m"
         echo -e "\033[1;37mEndpoint: \033[0mhttp://localhost:8000/generate"
         echo -e "\033[1;37mMethod:   \033[0mPOST"
@@ -291,15 +302,7 @@ while [ $elapsed -lt $MAX_WAIT ]; do
         fi
         exit 0
     fi
-
-    if (( elapsed % 20 == 0 )); then
-        echo -e "\n\033[1;30m--- Recent TGI Logs ---\033[0m"
-        docker logs --tail=5 "${MODEL_NAME}" 2>&1 | grep -v "^time="
-    fi
-
     sleep $INTERVAL
-    elapsed=$((elapsed + INTERVAL))
-    echo -ne "\r\033[1;34m⏳ Waiting for service to be ready... ($elapsed/${MAX_WAIT}s)\033[0m"
 done
 
 error "Service failed to become ready within ${MAX_WAIT} seconds"
