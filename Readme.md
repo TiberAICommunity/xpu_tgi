@@ -14,15 +14,48 @@ A curated collection of Text Generation Inference (TGI) models optimized for Int
 # 1. Generate authentication token
 python utils/generate_token.py
 
-# 2. Start a model
-./start.sh Flan-T5-XXL
+# Example output:
+# --------------------------------------------------------------------------------
+# Generated at: 2024-03-22T15:30:45.123456
+# Token: XcAwKq7BSbGSoJCsVhUQ2e6MZ4ZOAH_mRR0HgmMNBQg
+# --------------------------------------------------------------------------------
 
-# 3. Make a request
+# 2. Set the token as environment variable
+export VALID_TOKEN=XcAwKq7BSbGSoJCsVhUQ2e6MZ4ZOAH_mRR0HgmMNBQg
+
+# 3. Start a model (with optional caching)
+./start.sh --cache-models Flan-T5-XXL  # Enable caching for faster reloads
+# or
+./start.sh Flan-T5-XXL                 # Without caching
+
+# 4. Make a request (use the same token)
 curl -X POST http://localhost:8000/generate \
-  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Authorization: Bearer $VALID_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"inputs": "What is quantum computing?", "parameters": {"max_new_tokens": 50}}'
 ```
+
+> ⚠️ **Important**: The `VALID_TOKEN` environment variable must be set before starting the service. This token will be used for authentication.
+
+## Model Caching
+
+### Enable Model Caching
+Models can be cached locally for faster reload times:
+
+```bash
+# Start with caching enabled
+./start.sh --cache-models your-model-name
+
+# Cache location: ./model_cache/
+```
+
+Benefits of caching:
+- 🚀 Faster model reloads
+- 📉 Reduced bandwidth usage
+- 🔄 Persistent across restarts
+- 💾 Shared cache across models
+
+> Note: Ensure sufficient disk space is available for caching large models
 
 ## Architecture & Security
 
