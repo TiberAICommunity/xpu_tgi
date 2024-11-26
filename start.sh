@@ -127,11 +127,10 @@ save_logs() {
     
     echo -e "\033[1;32m✓ Logs saved to: ${log_dir}/service_logs_${timestamp}.log\033[0m"
 }
-
 setup_tunnel() {
     if [ "$ENABLE_TUNNEL" != true ]; then
-        return
-    }
+        return 0
+    fi
 
     info "Setting up Cloudflare tunnel..."
     
@@ -150,19 +149,21 @@ setup_tunnel() {
     
     echo -e "\nStarting Cloudflare tunnel..."
     TUNNEL_URL_FILE=$(mktemp)
-    cloudflared tunnel --url http://localhost:8000 2>&1 | while read -r line; do
-        echo "$line"
-        if [[ $line =~ "your url is: "(.+) ]]; then
-            echo "${BASH_REMATCH[1]}" > "$TUNNEL_URL_FILE"
-        fi
-    done &
     
+    cloudflared tunnel --url http://localhost:8000 > >(tee /dev/stderr | grep -o "your url is: .*" > "$TUNNEL_URL_FILE") 2>&1 &
     TUNNEL_PID=$!
+    
     local max_attempts=30
     local attempt=1
     
     echo -n "Waiting for tunnel to be ready"
     while [ ! -s "$TUNNEL_URL_FILE" ] && [ $attempt -lt $max_attempts ]; do
+        if ! kill -0 $TUNNEL_PID 2>/dev/null; then
+            echo
+            error "Tunnel process died unexpectedly"
+            rm -f "$TUNNEL_URL_FILE"
+            return 1
+        fi
         echo -n "."
         sleep 1
         ((attempt++))
@@ -171,12 +172,19 @@ setup_tunnel() {
     
     if [ ! -s "$TUNNEL_URL_FILE" ]; then
         error "Tunnel failed to start or provide URL"
+        kill $TUNNEL_PID 2>/dev/null || true
         rm -f "$TUNNEL_URL_FILE"
         return 1
     fi
     
-    TUNNEL_URL=$(cat "$TUNNEL_URL_FILE")
+    TUNNEL_URL=$(grep -o "your url is: .*" "$TUNNEL_URL_FILE" | sed 's/your url is: //')
     rm -f "$TUNNEL_URL_FILE"
+    
+    if [ -z "$TUNNEL_URL" ]; then
+        error "Failed to extract tunnel URL"
+        kill $TUNNEL_PID 2>/dev/null || true
+        return 1
+    fi
     
     success "Tunnel established successfully"
     echo -e "\n\033[1;34m📡 Tunnel Access Information:\033[0m"
