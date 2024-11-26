@@ -50,6 +50,56 @@ error() {
     cleanup_and_exit 1
 }
 
+show_api_preview() {
+    echo -e "\n\033[1;33m📌 Once the service is ready, you can use it like this:\033[0m"
+    echo -e "\033[1;37mEndpoint: \033[0mhttp://localhost:8000/generate"
+    echo -e "\033[1;37mMethod:   \033[0mPOST"
+    echo -e "\033[1;37mHeaders:  \033[0m"
+    echo "  - Authorization: Bearer ${VALID_TOKEN}"
+    echo "  - Content-Type: application/json"
+    echo -e "\033[1;37mExample Request:\033[0m"
+    echo "curl -X POST http://localhost:8000/generate \\"
+    echo "  -H 'Content-Type: application/json' \\"
+    echo "  -H 'Authorization: Bearer ${VALID_TOKEN}' \\"
+    echo "  -d '{\"inputs\": \"What is the capital of France?\"}'"
+    echo
+    echo -e "\033[1;33m📌 Waiting for service to be ready...\033[0m"
+}
+
+show_api_documentation() {
+    echo -e "\n\033[1;33m📌 API Usage Guide:\033[0m"
+    echo -e "\033[1;37mEndpoint: \033[0mhttp://localhost:8000/generate"
+    echo -e "\033[1;37mMethod:   \033[0mPOST"
+    echo -e "\033[1;37mHeaders:  \033[0m"
+    echo "  - Authorization: Bearer ${VALID_TOKEN}"
+    echo "  - Content-Type: application/json"
+    echo -e "\033[1;37mRequest Body:\033[0m"
+    cat << 'EOF'
+{
+    "inputs": "What is the capital of France?",
+    "parameters": {
+        "max_new_tokens": 100,
+        "temperature": 0.7,
+        "top_p": 0.95,
+        "repetition_penalty": 1.1
+    }
+}
+EOF
+
+    echo -e "\n\033[1;37mCURL Example:\033[0m"
+    echo "curl -X POST http://localhost:8000/generate \\"
+    echo "  -H 'Content-Type: application/json' \\"
+    echo "  -H 'Authorization: Bearer ${VALID_TOKEN}' \\"
+    echo "  -d '{\"inputs\": \"What is the capital of France?\", \"parameters\": {\"max_new_tokens\": 100}}'"
+
+    echo -e "\n\033[1;33m📌 For remote access:\033[0m"
+    echo "1. Use SSH tunnel:"
+    echo "   ssh -L 8000:localhost:8000 user@server"
+    echo
+    echo "2. Or use Cloudflare tunnel:"
+    echo "   ./tunnel.sh"
+}
+
 save_logs() {
     local log_dir="${SCRIPT_DIR}/logs"
     local timestamp=$(date '+%Y%m%d_%H%M%S')
@@ -229,6 +279,29 @@ check_service_ready() {
     return 0
 }
 
+follow_tgi_logs() {
+    local log_lines=0
+    while true; do
+        if ! docker ps -q -f name="^${MODEL_NAME}$" > /dev/null 2>&1; then
+            error "TGI container stopped unexpectedly"
+        fi
+        
+        # Get new log lines
+        local new_logs
+        new_logs=$(docker logs "${MODEL_NAME}" 2>&1 | tail -n +$((log_lines + 1)))
+        if [[ -n "${new_logs}" ]]; then
+            echo "${new_logs}"
+            log_lines=$(docker logs "${MODEL_NAME}" 2>&1 | wc -l)
+        fi
+        
+        # Check if service is ready
+        if check_service_ready; then
+            return 0
+        fi
+        sleep 2
+    done
+}
+
 # Set up trap for CTRL+C and SIGTERM
 trap cleanup_prompt SIGINT SIGTERM
 
@@ -319,27 +392,16 @@ if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
     error "Failed to start services"
 fi
 
-info "This may take several minutes while the model downloads and loads..."
+# Show API preview before logs
+show_api_preview
 
-while true; do
-    if check_service_ready; then
-        success "🚀 Service is ready!"
-        echo -e "\n\033[1;33m📌 Service Access Information:\033[0m"
-        echo -e "\033[1;37mEndpoint: \033[0mhttp://localhost:8000/generate"
-        echo -e "\033[1;37mMethod:   \033[0mPOST"
-        echo -e "\033[1;37mHeaders:  \033[0m"
-        echo "  - Authorization: Bearer ${VALID_TOKEN}"
-        echo "  - Content-Type: application/json"
-        echo
-        echo -e "\033[1;33m📌 For remote access:\033[0m"
-        echo "1. Use SSH tunnel:"
-        echo "   ssh -L 8000:localhost:8000 user@server"
-        echo
-        echo "2. Or use Cloudflare tunnel:"
-        echo "   ./tunnel.sh"
-        break
-    fi
-    sleep $INTERVAL
-done
+info "This may take several minutes while the model downloads and loads..."
+echo -e "\n\033[1;33m📌 TGI Service Logs:\033[0m"
+if ! follow_tgi_logs; then
+    error "Failed to start TGI service"
+fi
+
+success "🚀 Service is ready!"
+show_api_documentation
 
 exit 0
