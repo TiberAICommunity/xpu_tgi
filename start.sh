@@ -4,6 +4,44 @@ set -euo pipefail
 IFS=$'\n\t'
 
 ENABLE_TUNNEL=false
+MODEL_DIR=""
+
+# Function definitions
+log() {
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
+}
+
+info() {
+    echo -e "\n\033[1;34m→ $1\033[0m"
+}
+
+success() {
+    echo -e "\n\033[1;32m✓ $1\033[0m"
+}
+
+error() {
+    echo -e "\n\033[1;31m❌ $1\033[0m"
+    cleanup_and_exit 1
+}
+
+cleanup_and_exit() {
+    local exit_code=$1
+    
+    # Cleanup tunnel if it was started
+    if [ "$ENABLE_TUNNEL" = true ] && [ -n "${TUNNEL_PID:-}" ]; then
+        kill $TUNNEL_PID 2>/dev/null || true
+    fi
+    
+    # Cleanup docker resources if they were created
+    if [ -n "${MODEL_NAME:-}" ]; then
+        docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
+            --env-file "${ENV_FILE}" \
+            --env-file "${ROOT_ENV_FILE}" \
+            down --remove-orphans || true
+    fi
+    
+    exit "${exit_code}"
+}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -19,6 +57,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+# Validate arguments
 if [[ -z "${MODEL_DIR}" ]]; then
     echo "Usage: $0 [--remote-tunnel] <model_directory>"
     echo "Example: $0 Flan-Ul2"
@@ -33,50 +72,32 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAX_WAIT=600
 INTERVAL=10
 
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1"
-}
-
-error_handler() {
-    local line_no=$1
-    local error_code=$2
-    log "ERROR: Command failed at line ${line_no} with exit code ${error_code}"
-    
-    if [ "$ENABLE_TUNNEL" = true ] && [ -n "${TUNNEL_PID:-}" ]; then
-        kill $TUNNEL_PID 2>/dev/null || true
-    fi
-    
-    docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
-        --env-file "${ENV_FILE}" \
-        --env-file "${ROOT_ENV_FILE}" \
-        logs
-    exit "${error_code}"
-}
-
-trap 'error_handler ${LINENO} $?' ERR
-
 ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
 if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
-    log "ERROR: .env file not found at ${ROOT_ENV_FILE}"
-    exit 1
+    error "ERROR: .env file not found at ${ROOT_ENV_FILE}"
 fi
 
-export $(grep VALID_TOKEN "${ROOT_ENV_FILE}")
-
-if [[ -z "${VALID_TOKEN:-}" ]]; then
-    log "ERROR: VALID_TOKEN not found in ${ROOT_ENV_FILE}"
-    exit 1
+if ! VALID_TOKEN=$(grep -o '^VALID_TOKEN=.*' "${ROOT_ENV_FILE}" | cut -d= -f2); then
+    error "ERROR: VALID_TOKEN not found in ${ROOT_ENV_FILE}"
 fi
+export VALID_TOKEN
 
 ENV_FILE="${SCRIPT_DIR}/${MODEL_DIR}/config/model.env"
 if [[ ! -f "${ENV_FILE}" ]]; then
-    log "ERROR: model.env file not found at ${ENV_FILE}"
-    exit 1
+    error "ERROR: model.env file not found at ${ENV_FILE}"
 fi
 
 set -a
-source "${ENV_FILE}"
+if ! source "${ENV_FILE}"; then
+    error "ERROR: Failed to source ${ENV_FILE}"
+fi
 set +a
+
+for var in MODEL_NAME SHM_SIZE; do
+    if [[ -z "${!var:-}" ]]; then
+        error "ERROR: ${var} not set in ${ENV_FILE}"
+    fi
+done
 
 setup_cloudflared() {
     echo -e "\n\033[1;33m⚠️  CLOUDFLARE TUNNEL NOTICE:\033[0m"
@@ -87,16 +108,7 @@ setup_cloudflared() {
     read -r response
     if [[ ! "$response" =~ ^[Yy]$ ]]; then
         echo "Aborting tunnel setup"
-        exit 1
-    fi
-
-    # Check if cloudflared is installed
-    if ! command -v cloudflared >/dev/null; then
-        echo "Installing cloudflared..."
-        # Download and install the latest cloudflared
-        curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-        sudo dpkg -i cloudflared.deb
-        rm cloudflared.deb
+        cleanup_and_exit 1
     fi
 
     if ! sudo -n true 2>/dev/null; then
@@ -111,15 +123,27 @@ setup_cloudflared() {
         echo
         return 1
     fi
+
+    if ! command -v cloudflared >/dev/null; then
+        echo "Installing cloudflared..."
+        if ! curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb; then
+            error "Failed to download cloudflared"
+        fi
+        if ! sudo dpkg -i cloudflared.deb; then
+            rm -f cloudflared.deb
+            error "Failed to install cloudflared"
+        fi
+        rm -f cloudflared.deb
+    fi
 }
 
 start_tunnel() {
     echo -e "\n\033[1;34m→ Starting Cloudflare tunnel...\033[0m"
-    cloudflared tunnel --url http://localhost:8000 &
-    TUNNEL_PID=$!
+    if ! cloudflared tunnel --url http://localhost:8000 & TUNNEL_PID=$!; then
+        error "Failed to start Cloudflare tunnel"
+    fi
     
-    # Wait for tunnel URL
-    sleep 5
+    sleep 8
     TUNNEL_URL=$(cloudflared tunnel --url http://localhost:8000 2>&1 | grep -o 'https://.*\.trycloudflare\.com' || echo "")
     
     if [ -n "$TUNNEL_URL" ]; then
@@ -132,13 +156,9 @@ start_tunnel() {
         echo "  - Content-Type: application/json"
         echo -e "\n\033[1;31m⚠️  IMPORTANT: This tunnel is for evaluation only!\033[0m"
     else
-        echo -e "\n\033[1;31m❌ Failed to establish tunnel\033[0m"
+        error "Failed to establish tunnel"
     fi
 }
-
-if [ "$ENABLE_TUNNEL" = true ]; then
-    setup_cloudflared
-fi
 
 validate_network() {
     local network_name="${MODEL_NAME}_network"
@@ -147,35 +167,46 @@ validate_network() {
     if docker network ls --format '{{.Name}}' | grep -q "^${network_name}$"; then
         log "Network ${network_name} exists, checking for conflicts..."
         local connected_containers
-        connected_containers=$(docker network inspect "${network_name}" -f '{{range .Containers}}{{.Name}} {{end}}')
+        connected_containers=$(docker network inspect "${network_name}" -f '{{range .Containers}}{{.Name}} {{end}}' || echo "")
         if [[ -n "${connected_containers}" ]]; then
             log "WARNING: Network ${network_name} is being used by: ${connected_containers}"
             log "Cleaning up existing network..."
-            docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
+            if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
                 --env-file "${ENV_FILE}" \
                 --env-file "${ROOT_ENV_FILE}" \
-                down --remove-orphans
+                down --remove-orphans; then
+                error "Failed to clean up existing network"
+            fi
         fi
     fi
 }
 
+trap 'cleanup_and_exit $?' ERR
+
+info "Starting deployment for ${MODEL_NAME}..."
 log "Using configuration from: ${ENV_FILE}"
 log "MODEL_NAME: ${MODEL_NAME}"
-log "PORT: ${PORT}"
 log "SHM_SIZE: ${SHM_SIZE}"
 log "VALID_TOKEN is set: ${VALID_TOKEN:+yes}"
 
+if [ "$ENABLE_TUNNEL" = true ]; then
+    if ! setup_cloudflared; then
+        ENABLE_TUNNEL=false
+        info "Continuing without tunnel setup..."
+    fi
+fi
+
 validate_network
 
-log "Starting ${MODEL_NAME} service..."
-export VALID_TOKEN
-docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
+info "Starting ${MODEL_NAME} service..."
+if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
     --env-file "${ENV_FILE}" \
     --env-file "${ROOT_ENV_FILE}" \
-    up -d
+    up -d; then
+    error "Failed to start services"
+fi
 
 check_service_ready() {
-    # Check if all required containers are running
     local containers_running=true
     for service in "tgi_proxy" "tgi_auth" "${MODEL_NAME}"; do
         if ! docker ps --format '{{.Names}}' | grep -q "^${service}$"; then
@@ -184,7 +215,6 @@ check_service_ready() {
         fi
     done
 
-    # If containers are running, check TGI logs for model loaded message
     if [ "$containers_running" = true ]; then
         if docker logs "${MODEL_NAME}" 2>&1 | grep -q "Connected to pipeline"; then
             return 0
@@ -230,7 +260,4 @@ while [ $elapsed -lt $MAX_WAIT ]; do
     echo -ne "\r\033[1;34m⏳ Waiting for service to be ready... ($elapsed/${MAX_WAIT}s)\033[0m"
 done
 
-log "ERROR: Service failed to become ready within ${MAX_WAIT} seconds"
-log "Full container logs:"
-docker compose -f "${SCRIPT_DIR}/docker-compose.yml" --env-file "${ENV_FILE}" logs
-exit 1
+error "Service failed to become ready within ${MAX_WAIT} seconds"
