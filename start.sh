@@ -3,11 +3,13 @@
 set -euo pipefail
 IFS=$'\n\t'
 
+# Global variables
 CACHE_MODELS=false
 MODEL_DIR=""
 SCRIPT_START_TIME=$(date +%s)
 INTERVAL=5
 
+# Function definitions
 show_help() {
     echo "Usage: $0 [OPTIONS] <model_directory>"
     echo
@@ -104,6 +106,36 @@ cleanup_prompt() {
     exit 0
 }
 
+cleanup_and_exit() {
+    local exit_code=${1:-0}
+    
+    if [ -n "${MODEL_NAME:-}" ]; then
+        echo "Stopping containers..."
+        docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
+            --env-file "${ENV_FILE}" \
+            --env-file "${ROOT_ENV_FILE}" \
+            down --remove-orphans || true
+    fi
+    
+    exit "${exit_code}"
+}
+
+validate_docker() {
+    if ! command -v docker >/dev/null 2>&1; then
+        error "Docker is not installed. Please install Docker first."
+    fi
+    
+    if ! docker info >/dev/null 2>&1; then
+        error "Docker daemon is not running or current user doesn't have permission to access it."
+    fi
+}
+
+check_port_available() {
+    if lsof -i:8000 >/dev/null 2>&1; then
+        error "Port 8000 is already in use. Please stop any running services on this port."
+    fi
+}
+
 validate_model_path() {
     if [[ $MODEL_DIR != models/* ]]; then
         MODEL_DIR="models/$MODEL_DIR"
@@ -154,6 +186,27 @@ check_model_env() {
     fi
 }
 
+validate_network() {
+    local network_name="${MODEL_NAME}_network"
+    log "Validating network configuration..."
+    
+    if docker network ls --format '{{.Name}}' | grep -q "^${network_name}$"; then
+        log "Network ${network_name} exists, checking for conflicts..."
+        local connected_containers
+        connected_containers=$(docker network inspect "${network_name}" -f '{{range .Containers}}{{.Name}} {{end}}' || echo "")
+        if [[ -n "${connected_containers}" ]]; then
+            log "WARNING: Network ${network_name} is being used by: ${connected_containers}"
+            log "Cleaning up existing network..."
+            if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
+                --env-file "${ENV_FILE}" \
+                --env-file "${ROOT_ENV_FILE}" \
+                down --remove-orphans; then
+                error "Failed to clean up existing network"
+            fi
+        fi
+    fi
+}
+
 setup_model_cache() {
     info "Setting up model cache directory..."
     local cache_dir="${SCRIPT_DIR}/model_cache"
@@ -190,7 +243,16 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         -*)
-            echo "Unknown option: $1"
+            echo -e "\n\033[1;31m❌ Unknown option: $1\033[0m"
+            if [[ "$1" == "--remote-tunnel" ]]; then
+                echo -e "\n\033[1;33m📌 Note: Remote tunnel is now a separate script\033[0m"
+                echo "First start the service:"
+                echo "  VALID_TOKEN=xxx ./start.sh ${MODEL_DIR}"
+                echo
+                echo "Then start the tunnel:"
+                echo "  ./tunnel.sh"
+            fi
+            echo
             show_help
             ;;
         *)
@@ -206,6 +268,10 @@ fi
 
 # Setup paths and validate
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Initial validations
+validate_docker
+check_port_available
 validate_model_path
 
 # Setup environment files
@@ -232,7 +298,11 @@ for var in MODEL_NAME SHM_SIZE; do
     fi
 done
 
-# Now we can use MODEL_NAME and other variables
+if [ "$CACHE_MODELS" = true ]; then
+    setup_model_cache
+fi
+
+# Start services
 info "Starting deployment for ${MODEL_NAME}..."
 log "Using configuration from: ${ENV_FILE}"
 log "MODEL_NAME: ${MODEL_NAME}"
