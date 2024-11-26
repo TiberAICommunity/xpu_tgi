@@ -208,10 +208,31 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 validate_model_path
 
-if [ "$CACHE_MODELS" = true ]; then
-    setup_model_cache
+# Setup environment files
+ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
+if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
+    error "ERROR: .env file not found at ${ROOT_ENV_FILE}"
 fi
 
+ENV_FILE="${SCRIPT_DIR}/${MODEL_DIR}/config/model.env"
+if [[ ! -f "${ENV_FILE}" ]]; then
+    error "ERROR: model.env file not found at ${ENV_FILE}"
+fi
+
+# Source the environment files
+set -a
+source "${ENV_FILE}"
+source "${ROOT_ENV_FILE}"
+set +a
+
+# Validate required variables
+for var in MODEL_NAME SHM_SIZE; do
+    if [[ -z "${!var:-}" ]]; then
+        error "ERROR: ${var} not set in ${ENV_FILE}"
+    fi
+done
+
+# Now we can use MODEL_NAME and other variables
 info "Starting deployment for ${MODEL_NAME}..."
 log "Using configuration from: ${ENV_FILE}"
 log "MODEL_NAME: ${MODEL_NAME}"
