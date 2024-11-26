@@ -132,30 +132,59 @@ setup_tunnel() {
     if [ "$ENABLE_TUNNEL" != true ]; then
         return
     }
+
     info "Setting up Cloudflare tunnel..."
+    
     if ! command -v cloudflared &>/dev/null; then
         echo -e "\n\033[1;33m⚠️  Cloudflared not found, attempting to install...\033[0m"
+        
         if command -v curl &>/dev/null; then
             curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
             sudo dpkg -i cloudflared.deb
             rm cloudflared.deb
- 
+        else
+            error "curl not found. Please install cloudflared manually"
+            return 1
+        fi
     fi
+    
     echo -e "\nStarting Cloudflare tunnel..."
-    cloudflared tunnel --url http://localhost:8000 &
-    TUNNEL_PID=$!  
-    sleep 2
-    if ! kill -0 $TUNNEL_PID 2>/dev/null; then
-        echo -e "\n\033[1;33m⚠️  Tunnel failed to start. You can:\033[0m"
-        echo "1. Access the service locally at http://localhost:8000"
-        echo "2. Set up SSH port forwarding manually:"
-        echo "   ssh -L 8000:localhost:8000 your_username@your_server"
-        echo -e "\nContinuing with local access only..."
+    TUNNEL_URL_FILE=$(mktemp)
+    cloudflared tunnel --url http://localhost:8000 2>&1 | while read -r line; do
+        echo "$line"
+        if [[ $line =~ "your url is: "(.+) ]]; then
+            echo "${BASH_REMATCH[1]}" > "$TUNNEL_URL_FILE"
+        fi
+    done &
+    
+    TUNNEL_PID=$!
+    local max_attempts=30
+    local attempt=1
+    
+    echo -n "Waiting for tunnel to be ready"
+    while [ ! -s "$TUNNEL_URL_FILE" ] && [ $attempt -lt $max_attempts ]; do
+        echo -n "."
+        sleep 1
+        ((attempt++))
+    done
+    echo
+    
+    if [ ! -s "$TUNNEL_URL_FILE" ]; then
+        error "Tunnel failed to start or provide URL"
+        rm -f "$TUNNEL_URL_FILE"
         return 1
     fi
+    
+    TUNNEL_URL=$(cat "$TUNNEL_URL_FILE")
+    rm -f "$TUNNEL_URL_FILE"
+    
     success "Tunnel established successfully"
+    echo -e "\n\033[1;34m📡 Tunnel Access Information:\033[0m"
+    echo "→ Tunnel URL: $TUNNEL_URL"
+    
     return 0
 }
+
 
 validate_model() {
     local model_dir="$1"
