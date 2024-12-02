@@ -379,7 +379,7 @@ if [[ -z "${MODEL_DIR}" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export ENV_FILE="${SCRIPT_DIR}/${MODEL_DIR}/config/model.env"
+export ENV_FILE="${SCRIPT_DIR}/models/${MODEL_DIR}/config/model.env"
 
 check_token
 validate_docker
