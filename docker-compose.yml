@@ -5,8 +5,6 @@ services:
     container_name: tgi_auth
     environment:
       - VALID_TOKEN=${VALID_TOKEN}
-    env_file:
-      - .env
     networks:
       - tgi_net
     read_only: true
@@ -28,15 +26,15 @@ services:
 
   proxy:
     image: traefik:v3.2.1
-    container_name: tgi_proxy
+    container_name: tgi_proxy_${GPU_ID:-0}
     command:
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:8000"
+      - "--entrypoints.web.address=:${PORT:-8000}"
       - "--accesslog=true"
       - "--providers.file.directory=/etc/traefik/dynamic"
     ports:
-      - "8000:8000"
+      - "${PORT:-8000}:${PORT:-8000}"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik:/etc/traefik/dynamic:ro
@@ -44,8 +42,6 @@ services:
       - tgi_net
     depends_on:
       - auth-service
-    env_file:
-      - .env
     environment:
       - VALID_TOKEN=${VALID_TOKEN}
     healthcheck:
@@ -73,15 +69,10 @@ services:
     environment:
       - VALID_TOKEN=${VALID_TOKEN}
       - MODEL_NAME=${MODEL_NAME}
-      - MODEL_ID=${MODEL_ID}
-      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
-      - MAX_BATCH_SIZE=${MAX_BATCH_SIZE}
-      - MAX_TOTAL_TOKENS=${MAX_TOTAL_TOKENS}
-      - MAX_INPUT_LENGTH=${MAX_INPUT_LENGTH}
-      - MAX_WAITING_TOKENS=${MAX_WAITING_TOKENS}
-      - HF_HOME=/root/.cache/huggingface
       - XPU_VISIBLE_DEVICES=${GPU_ID:-0}
       - ZE_AFFINITY_MASK=${GPU_ID:-0}
+    env_file:
+      - ${ENV_FILE}
     command: >
       --model-id ${MODEL_ID}
       --dtype bfloat16
@@ -98,8 +89,6 @@ services:
       - "traefik.http.routers.tgi.rule=PathPrefix(`/generate`)"
       - "traefik.http.routers.tgi.middlewares=chain-auth@file"
       - "traefik.http.services.tgi.loadbalancer.server.port=80"
-    env_file:
-      - .env
     depends_on:
       auth-service:
         condition: service_healthy

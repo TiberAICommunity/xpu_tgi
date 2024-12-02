@@ -222,11 +222,11 @@ deploy_gpu() {
     export GPU_ID=$gpu_id
     export GPU_DEVICE="/dev/dri/renderD$((128 + gpu_id))"
     export MODEL_NAME="${MODEL_NAME}_gpu${gpu_id}"
+    export PORT=$((8000 + gpu_id))
     
-    info "Starting deployment on GPU ${gpu_id}..."
+    info "Starting deployment on GPU ${gpu_id} (Port: ${PORT})..."
     if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
         --env-file "${ENV_FILE}" \
-        --env-file "${ROOT_ENV_FILE}" \
         up -d; then
         error "Failed to start service on GPU ${gpu_id}"
     fi
@@ -238,15 +238,12 @@ check_token() {
 
 Please set your authentication token:
 1. Generate a secure token:
-   ./generate_token.py
+   python3 ./utils/generate_token.py
    
 2. Set the environment variable:
    export VALID_TOKEN=your_generated_token
 
-3. Then try starting the service again.
-
-For persistent configuration, add to your ~/.bashrc:
-   export VALID_TOKEN=your_generated_token"
+3. Then try starting the service again."
     fi
 }
 
