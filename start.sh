@@ -9,7 +9,7 @@ SCRIPT_START_TIME=$(date +%s)
 INTERVAL=5
 
 show_help() {
-    echo "Usage: $0 [OPTIONS] <model_directory>"
+    echo "Usage: $0 [OPTIONS] <model_directory> [gpu_option]"
     echo
     echo "Start the TGI service with the specified model"
     echo
@@ -17,9 +17,16 @@ show_help() {
     echo "  -h, --help         Show this help message"
     echo "  --cache-models     Cache models locally for faster reload"
     echo
+    echo "GPU Options:"
+    echo "  default            Run on default GPU (when no gpu_option provided)"
+    echo "  all-gpus          Deploy on all available GPUs"
+    echo "  0,1,2,...         Deploy on specific GPUs (comma-separated)"
+    echo
     echo "Examples:"
-    echo "  $0 Phi-3-mini"
-    echo "  $0 --cache-models Phi-3-mini"
+    echo "  $0 Phi-3-mini                  # Run on default GPU"
+    echo "  $0 --cache-models Phi-3-mini   # Run with model caching"
+    echo "  $0 Phi-3-mini all-gpus         # Run on all available GPUs"
+    echo "  $0 Phi-3-mini 0,2,5            # Run on GPUs 0, 2, and 5"
     echo
     echo "Note:"
     echo "  Model directory should be relative to ./models/"
@@ -210,6 +217,21 @@ validate_model_path() {
     fi
 }
 
+deploy_gpu() {
+    local gpu_id=$1
+    export GPU_ID=$gpu_id
+    export GPU_DEVICE="/dev/dri/renderD$((128 + gpu_id))"
+    export MODEL_NAME="${MODEL_NAME}_gpu${gpu_id}"
+    
+    info "Starting deployment on GPU ${gpu_id}..."
+    if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
+        --env-file "${ENV_FILE}" \
+        --env-file "${ROOT_ENV_FILE}" \
+        up -d; then
+        error "Failed to start service on GPU ${gpu_id}"
+    fi
+}
+
 check_model_env() {
     local model_path="$1"
     local env_file="${model_path}/config/model.env"
@@ -390,7 +412,6 @@ if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
     up -d; then
     error "Failed to start services"
 fi
-
 show_api_preview
 
 info "This may take several minutes while the model downloads and loads..."
@@ -401,5 +422,29 @@ fi
 
 success "🚀 Service is ready!"
 show_api_documentation
+
+GPU_OPTION="${2:-}"
+if [ -n "$GPU_OPTION" ]; then
+    if [ "$GPU_OPTION" = "all-gpus" ]; then
+        info "Deploying on all available GPUs..."
+        for i in $(seq 0 $(($(ls /dev/dri/renderD* | wc -l) - 1))); do
+            deploy_gpu $i
+        done
+        success "🚀 All GPU deployments completed!"
+        show_api_documentation
+        exit 0
+    elif [[ $GPU_OPTION =~ ^[0-9,]+$ ]]; then
+        info "Deploying on specified GPUs: $GPU_OPTION"
+        IFS=',' read -ra GPU_IDS <<< "$GPU_OPTION"
+        for gpu_id in "${GPU_IDS[@]}"; do
+            deploy_gpu $gpu_id
+        done
+        success "🚀 Multi-GPU deployment completed!"
+        show_api_documentation
+        exit 0
+    else
+        error "Invalid GPU option: $GPU_OPTION"
+    fi
+fi
 
 exit 0

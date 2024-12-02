@@ -63,7 +63,7 @@ services:
     cap_add:
       - sys_nice
     devices:
-      - /dev/dri:/dev/dri
+      - ${GPU_DEVICE:-/dev/dri}:/dev/dri
     ipc: host
     shm_size: ${SHM_SIZE}
     expose:
@@ -80,6 +80,8 @@ services:
       - MAX_INPUT_LENGTH=${MAX_INPUT_LENGTH}
       - MAX_WAITING_TOKENS=${MAX_WAITING_TOKENS}
       - HF_HOME=/root/.cache/huggingface
+      - XPU_VISIBLE_DEVICES=${GPU_ID:-0}
+      - ZE_AFFINITY_MASK=${GPU_ID:-0}
     command: >
       --model-id ${MODEL_ID}
       --dtype bfloat16
