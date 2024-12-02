@@ -372,6 +372,7 @@ if [[ -z "${MODEL_DIR}" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
 
 validate_docker
 check_port_available
