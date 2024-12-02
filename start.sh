@@ -379,15 +379,13 @@ if [[ -z "${MODEL_DIR}" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export ENV_FILE="${SCRIPT_DIR}/${MODEL_DIR}/config/model.env"
 
 check_token
 validate_docker
 check_port_available
 validate_model_path
 
-
-
-ENV_FILE="${SCRIPT_DIR}/${MODEL_DIR}/config/model.env"
 if [[ ! -f "${ENV_FILE}" ]]; then
     error "ERROR: model.env file not found at ${ENV_FILE}"
 fi
