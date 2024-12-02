@@ -153,7 +153,6 @@ cleanup_prompt() {
         echo "Stopping containers and cleaning up..."
         docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
             --env-file "${ENV_FILE}" \
-            --env-file "${ROOT_ENV_FILE}" \
             down --remove-orphans || true
         local network_name="${MODEL_NAME}_network"
         if docker network ls --format '{{.Name}}' | grep -q "^${network_name}$"; then
@@ -173,7 +172,6 @@ cleanup_and_exit() {
         echo "Stopping containers and cleaning up..."
         docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
             --env-file "${ENV_FILE}" \
-            --env-file "${ROOT_ENV_FILE}" \
             down --remove-orphans || true
         local network_name="${MODEL_NAME}_network"
         if docker network ls --format '{{.Name}}' | grep -q "^${network_name}$"; then
@@ -294,7 +292,6 @@ validate_network() {
             log "Cleaning up existing network..."
             if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
                 --env-file "${ENV_FILE}" \
-                --env-file "${ROOT_ENV_FILE}" \
                 down --remove-orphans; then
                 error "Failed to clean up existing network"
             fi
@@ -382,17 +379,13 @@ if [[ -z "${MODEL_DIR}" ]]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
 
 check_token
 validate_docker
 check_port_available
 validate_model_path
 
-ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
-if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
-    error "ERROR: .env file not found at ${ROOT_ENV_FILE}"
-fi
+
 
 ENV_FILE="${SCRIPT_DIR}/${MODEL_DIR}/config/model.env"
 if [[ ! -f "${ENV_FILE}" ]]; then
@@ -401,7 +394,6 @@ fi
 
 set -a
 source "${ENV_FILE}"
-source "${ROOT_ENV_FILE}"
 set +a
 
 for var in MODEL_NAME SHM_SIZE; do
@@ -425,7 +417,6 @@ validate_network
 info "Starting ${MODEL_NAME} service..."
 if ! docker compose -f "${SCRIPT_DIR}/docker-compose.yml" \
     --env-file "${ENV_FILE}" \
-    --env-file "${ROOT_ENV_FILE}" \
     up -d; then
     error "Failed to start services"
 fi
