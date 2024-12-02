@@ -213,6 +213,7 @@ validate_model_path() {
 
 deploy_gpu() {
     local gpu_id=$1
+    local is_first=$2
     export GPU_ID=$gpu_id
     export GPU_DEVICE="/dev/dri/renderD$((128 + gpu_id))"
     export MODEL_NAME="${MODEL_NAME}_gpu${gpu_id}"
@@ -223,6 +224,16 @@ deploy_gpu() {
         --env-file "${ENV_FILE}" \
         up -d; then
         error "Failed to start service on GPU ${gpu_id}"
+    fi
+
+    if [ "$is_first" = "true" ]; then
+        show_api_preview
+        info "This may take several minutes while the model downloads and loads..."
+        echo -e "\n\033[1;33m📌 TGI Service Logs:\033[0m"
+        if ! follow_tgi_logs; then
+            error "Failed to start TGI service"
+        fi
+        success "🚀 First GPU deployment completed!"
     fi
 }
 
@@ -438,18 +449,39 @@ show_api_documentation
 
 if [ "$GPU_MODE" = "all" ]; then
     info "Deploying on all available GPUs..."
-    for i in $(seq 0 $(($(ls /dev/dri/renderD* | wc -l) - 1))); do
-        deploy_gpu $i
+    GPU_COUNT=$(ls /dev/dri/renderD* | wc -l)
+    for i in $(seq 0 $((GPU_COUNT - 1))); do
+        if [ "$i" = "0" ]; then
+            deploy_gpu $i true
+        else
+            deploy_gpu $i false
+        fi
     done
-    success "� All GPU deployments completed!"
-    show_api_documentation
+    success "🚀 All GPU deployments completed!"
+    echo -e "\n\033[1;33m📌 Available Endpoints:\033[0m"
+    for i in $(seq 0 $((GPU_COUNT - 1))); do
+        echo "GPU $i: http://localhost:$((8000 + i))/generate"
+    done
 elif [ "$GPU_MODE" = "specific" ]; then
     info "Deploying on specified GPUs: $GPU_LIST"
     IFS=',' read -ra GPU_IDS <<< "$GPU_LIST"
+    first=true
     for gpu_id in "${GPU_IDS[@]}"; do
-        deploy_gpu $gpu_id
+        if [ "$first" = "true" ]; then
+            deploy_gpu $gpu_id true
+            first=false
+        else
+            deploy_gpu $gpu_id false
+        fi
     done
     success "🚀 Multi-GPU deployment completed!"
+    echo -e "\n\033[1;33m📌 Available Endpoints:\033[0m"
+    for gpu_id in "${GPU_IDS[@]}"; do
+        echo "GPU $gpu_id: http://localhost:$((8000 + gpu_id))/generate"
+    done
+else
+    deploy_gpu 0 true
+    success "🚀 Service is ready!"
     show_api_documentation
 fi
 
