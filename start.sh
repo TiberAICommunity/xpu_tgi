@@ -194,7 +194,12 @@ validate_docker() {
         error "Docker daemon is not running or current user doesn't have permission to access it."
     fi
 }
-
+ensure_env_file() {
+    if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
+        info "Creating default .env file..."
+        echo "VALID_TOKEN=${VALID_TOKEN:-default_token}" > "${ROOT_ENV_FILE}"
+    fi
+}
 check_port_available() {
     if lsof -i:8000 >/dev/null 2>&1; then
         error "Port 8000 is already in use. Please stop any running services on this port."
@@ -371,6 +376,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 validate_docker
 check_port_available
 validate_model_path
+ensure_env_file
 
 ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
 if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
