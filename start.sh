@@ -227,13 +227,10 @@ deploy_gpu() {
     fi
 
     if [ "$is_first" = "true" ]; then
-        show_api_preview
-        info "This may take several minutes while the model downloads and loads..."
-        echo -e "\n\033[1;33m📌 TGI Service Logs:\033[0m"
         if ! follow_tgi_logs; then
             error "Failed to start TGI service"
         fi
-        success "🚀 First GPU deployment completed!"
+        info "First instance ready. Check logs with: docker logs ${MODEL_NAME}"
     fi
 }
 
@@ -328,26 +325,50 @@ check_service_ready() {
     return 0
 }
 
+show_deployment_summary() {
+    local gpu_mode=$1
+    echo -e "\n\033[1;33m Deployment Summary:\033[0m"
+    echo -e "\033[1;37mModel:        \033[0m${MODEL_NAME}"
+    echo -e "\033[1;37mCache:        \033[0m${CACHE_MODELS}"
+    
+    case "$gpu_mode" in
+        "all")
+            local gpu_count=$(ls /dev/dri/renderD* | wc -l)
+            echo -e "\033[1;37mGPU Mode:     \033[0mAll GPUs ($gpu_count devices)"
+            echo -e "\033[1;37mEndpoints:    \033[0m"
+            for i in $(seq 0 $((gpu_count - 1))); do
+                echo "  - http://localhost:$((8000 + i))/generate (GPU $i)"
+            done
+            ;;
+        "specific")
+            echo -e "\033[1;37mGPU Mode:     \033[0mSpecific GPUs ($GPU_LIST)"
+            echo -e "\033[1;37mEndpoints:    \033[0m"
+            IFS=',' read -ra GPU_IDS <<< "$GPU_LIST"
+            for gpu_id in "${GPU_IDS[@]}"; do
+                echo "  - http://localhost:$((8000 + gpu_id))/generate (GPU $gpu_id)"
+            done
+            ;;
+        *)
+            echo -e "\033[1;37mGPU Mode:     \033[0mSingle GPU (default)"
+            echo -e "\033[1;37mEndpoint:     \033[0mhttp://localhost:8000/generate"
+            ;;
+    esac
+    echo
+}
+
 follow_tgi_logs() {
-    local log_lines=0
-    while true; do
-        if ! docker ps -q -f name="^${MODEL_NAME}$" > /dev/null 2>&1; then
-            error "TGI container stopped unexpectedly"
-        fi
-        
-        # Get new log lines
-        local new_logs
-        new_logs=$(docker logs "${MODEL_NAME}" 2>&1 | tail -n +$((log_lines + 1)))
-        if [[ -n "${new_logs}" ]]; then
-            echo "${new_logs}"
-            log_lines=$(docker logs "${MODEL_NAME}" 2>&1 | wc -l)
-        fi
-        
-        if check_service_ready; then
+    local max_attempts=300
+    local attempt=0
+    
+    info "Waiting for TGI service to initialize..."
+    while [ $attempt -lt $max_attempts ]; do
+        if docker logs "${MODEL_NAME}" 2>&1 | grep -q "message\":\"Connected\",\"target\":\"text_generation"; then
             return 0
         fi
+        attempt=$((attempt + 1))
         sleep 2
     done
+    error "Timeout waiting for TGI service to initialize"
 }
 
 trap cleanup_prompt SIGINT SIGTERM
@@ -422,6 +443,8 @@ if [ "$CACHE_MODELS" = true ]; then
     setup_model_cache
 fi
 
+show_deployment_summary "$GPU_MODE"
+
 info "Starting deployment for ${MODEL_NAME}..."
 log "Using configuration from: ${ENV_FILE}"
 log "MODEL_NAME: ${MODEL_NAME}"
@@ -450,39 +473,49 @@ show_api_documentation
 if [ "$GPU_MODE" = "all" ]; then
     info "Deploying on all available GPUs..."
     GPU_COUNT=$(ls /dev/dri/renderD* | wc -l)
-    for i in $(seq 0 $((GPU_COUNT - 1))); do
-        if [ "$i" = "0" ]; then
-            deploy_gpu $i true
-        else
-            deploy_gpu $i false
-        fi
+    
+    # Deploy first instance
+    deploy_gpu 0 true
+    
+    # Deploy remaining instances
+    for i in $(seq 1 $((GPU_COUNT - 1))); do
+        deploy_gpu $i false
     done
+    
     success "🚀 All GPU deployments completed!"
     echo -e "\n\033[1;33m📌 Available Endpoints:\033[0m"
     for i in $(seq 0 $((GPU_COUNT - 1))); do
         echo "GPU $i: http://localhost:$((8000 + i))/generate"
     done
+    echo -e "\n📋 Check service status with: docker ps"
+    echo "📋 View logs with: docker logs <container_name>"
+    
 elif [ "$GPU_MODE" = "specific" ]; then
     info "Deploying on specified GPUs: $GPU_LIST"
     IFS=',' read -ra GPU_IDS <<< "$GPU_LIST"
-    first=true
-    for gpu_id in "${GPU_IDS[@]}"; do
-        if [ "$first" = "true" ]; then
-            deploy_gpu $gpu_id true
-            first=false
-        else
-            deploy_gpu $gpu_id false
-        fi
+    
+    # Deploy first instance
+    first_gpu=${GPU_IDS[0]}
+    deploy_gpu $first_gpu true
+    
+    # Deploy remaining instances
+    for gpu_id in "${GPU_IDS[@]:1}"; do
+        deploy_gpu $gpu_id false
     done
+    
     success "🚀 Multi-GPU deployment completed!"
     echo -e "\n\033[1;33m📌 Available Endpoints:\033[0m"
     for gpu_id in "${GPU_IDS[@]}"; do
         echo "GPU $gpu_id: http://localhost:$((8000 + gpu_id))/generate"
     done
+    echo -e "\n📋 Check service status with: docker ps"
+    echo "📋 View logs with: docker logs <container_name>"
+    
 else
     deploy_gpu 0 true
     success "🚀 Service is ready!"
-    show_api_documentation
+    echo -e "\n📋 Check service status with: docker ps"
+    echo "📋 View logs with: docker logs ${MODEL_NAME}"
 fi
 
 exit 0
