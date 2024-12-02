@@ -194,12 +194,7 @@ validate_docker() {
         error "Docker daemon is not running or current user doesn't have permission to access it."
     fi
 }
-ensure_env_file() {
-    if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
-        info "Creating default .env file..."
-        echo "VALID_TOKEN=${VALID_TOKEN:-default_token}" > "${ROOT_ENV_FILE}"
-    fi
-}
+
 check_port_available() {
     if lsof -i:8000 >/dev/null 2>&1; then
         error "Port 8000 is already in use. Please stop any running services on this port."
@@ -234,6 +229,24 @@ deploy_gpu() {
         --env-file "${ROOT_ENV_FILE}" \
         up -d; then
         error "Failed to start service on GPU ${gpu_id}"
+    fi
+}
+
+check_token() {
+    if [[ -z "${VALID_TOKEN:-}" ]]; then
+        error "VALID_TOKEN environment variable not set!
+
+Please set your authentication token:
+1. Generate a secure token:
+   ./generate_token.py
+   
+2. Set the environment variable:
+   export VALID_TOKEN=your_generated_token
+
+3. Then try starting the service again.
+
+For persistent configuration, add to your ~/.bashrc:
+   export VALID_TOKEN=your_generated_token"
     fi
 }
 
@@ -374,10 +387,10 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
 
+check_token
 validate_docker
 check_port_available
 validate_model_path
-ensure_env_file
 
 ROOT_ENV_FILE="${SCRIPT_DIR}/.env"
 if [[ ! -f "${ROOT_ENV_FILE}" ]]; then
