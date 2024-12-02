@@ -28,7 +28,17 @@ export VALID_TOKEN=XcAwKq7BSbGSoJCsVhUQ2e6MZ4ZOAH_mRR0HgmMNBQg
 # or
 ./start.sh Flan-T5-XXL                 # Without caching
 
-# 4. Make a request (use the same token)
+# 4. Stop a model or all models
+./stop.sh Flan-T5-XXL                  # Stop a specific model
+# or
+./stop.sh                              # Stop all models
+
+# 5. Clean up a model or all models
+./cleanup.sh Flan-T5-XXL               # Clean up a specific model
+# or
+./cleanup.sh                           # Clean up all models
+
+# 6. Make a request (use the same token)
 curl -X POST http://localhost:8000/generate \
   -H "Authorization: Bearer $VALID_TOKEN" \
   -H "Content-Type: application/json" \
@@ -210,3 +220,29 @@ curl -X POST http://localhost:8000/generate \
   -H "Content-Type: application/json" \
   -d '{"inputs": "Your prompt here", "parameters": {}}'
 ```
+
+## Model Management
+
+### Stopping Models
+You can stop a specific model or all models:
+
+```bash
+# Stop a specific model
+./stop.sh your-model-name
+
+# Stop all models
+./stop.sh
+```
+
+### Cleaning Up Models
+You can clean up resources for a specific model or all models:
+
+```bash
+# Clean up a specific model
+./cleanup.sh your-model-name
+
+# Clean up all models
+./cleanup.sh
+```
+
+These updates to the `Readme.md` provide clear instructions on how to use the new options for stopping and cleaning up models, ensuring users can easily manage their models with the updated scripts.
