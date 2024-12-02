@@ -7,26 +7,22 @@ CACHE_MODELS=false
 MODEL_DIR=""
 SCRIPT_START_TIME=$(date +%s)
 INTERVAL=5
-
 show_help() {
-    echo "Usage: $0 [OPTIONS] <model_directory> [gpu_option]"
+    echo "Usage: $0 [OPTIONS] <model_directory>"
     echo
     echo "Start the TGI service with the specified model"
     echo
     echo "Options:"
     echo "  -h, --help         Show this help message"
     echo "  --cache-models     Cache models locally for faster reload"
-    echo
-    echo "GPU Options:"
-    echo "  default            Run on default GPU (when no gpu_option provided)"
-    echo "  all-gpus          Deploy on all available GPUs"
-    echo "  0,1,2,...         Deploy on specific GPUs (comma-separated)"
+    echo "  --all-gpus        Deploy on all available GPUs"
+    echo "  --gpus <list>     Deploy on specific GPUs (comma-separated, e.g., 0,1,2)"
     echo
     echo "Examples:"
-    echo "  $0 Phi-3-mini                  # Run on default GPU"
-    echo "  $0 --cache-models Phi-3-mini   # Run with model caching"
-    echo "  $0 Phi-3-mini all-gpus         # Run on all available GPUs"
-    echo "  $0 Phi-3-mini 0,2,5            # Run on GPUs 0, 2, and 5"
+    echo "  $0 Phi-3-mini                    # Run on default GPU"
+    echo "  $0 --cache-models Phi-3-mini     # Run with model caching"
+    echo "  $0 Phi-3-mini --all-gpus         # Run on all available GPUs"
+    echo "  $0 Phi-3-mini --gpus 0,2,5       # Run on GPUs 0, 2, and 5"
     echo
     echo "Note:"
     echo "  Model directory should be relative to ./models/"
@@ -345,6 +341,11 @@ follow_tgi_logs() {
 
 trap cleanup_prompt SIGINT SIGTERM
 
+MODEL_DIR=""
+CACHE_MODELS=false
+GPU_MODE="default"
+GPU_LIST=""
+
 while [[ $# -gt 0 ]]; do
     case $1 in
         -h|--help)
@@ -354,21 +355,27 @@ while [[ $# -gt 0 ]]; do
             CACHE_MODELS=true
             shift
             ;;
-        -*)
-            echo -e "\n\033[1;31m❌ Unknown option: $1\033[0m"
-            if [[ "$1" == "--remote-tunnel" ]]; then
-                echo -e "\n\033[1;33m📌 Note: Remote tunnel is now a separate script\033[0m"
-                echo "First start the service:"
-                echo "  VALID_TOKEN=xxx ./start.sh ${MODEL_DIR}"
-                echo
-                echo "Then start the tunnel:"
-                echo "  ./tunnel.sh"
+        --all-gpus)
+            GPU_MODE="all"
+            shift
+            ;;
+        --gpus)
+            GPU_MODE="specific"
+            if [[ -z "$2" || "$2" =~ ^- ]]; then
+                error "Missing GPU list after --gpus"
             fi
-            echo
-            show_help
+            GPU_LIST="$2"
+            shift 2
+            ;;
+        -*)
+            error "Unknown option: $1"
             ;;
         *)
-            MODEL_DIR="$1"
+            if [[ -z "${MODEL_DIR}" ]]; then
+                MODEL_DIR="$1"
+            else
+                error "Unexpected argument: $1"
+            fi
             shift
             ;;
     esac
@@ -429,28 +436,21 @@ fi
 success "🚀 Service is ready!"
 show_api_documentation
 
-GPU_OPTION="${2:-}"
-if [ -n "$GPU_OPTION" ]; then
-    if [ "$GPU_OPTION" = "all-gpus" ]; then
-        info "Deploying on all available GPUs..."
-        for i in $(seq 0 $(($(ls /dev/dri/renderD* | wc -l) - 1))); do
-            deploy_gpu $i
-        done
-        success "🚀 All GPU deployments completed!"
-        show_api_documentation
-        exit 0
-    elif [[ $GPU_OPTION =~ ^[0-9,]+$ ]]; then
-        info "Deploying on specified GPUs: $GPU_OPTION"
-        IFS=',' read -ra GPU_IDS <<< "$GPU_OPTION"
-        for gpu_id in "${GPU_IDS[@]}"; do
-            deploy_gpu $gpu_id
-        done
-        success "🚀 Multi-GPU deployment completed!"
-        show_api_documentation
-        exit 0
-    else
-        error "Invalid GPU option: $GPU_OPTION"
-    fi
+if [ "$GPU_MODE" = "all" ]; then
+    info "Deploying on all available GPUs..."
+    for i in $(seq 0 $(($(ls /dev/dri/renderD* | wc -l) - 1))); do
+        deploy_gpu $i
+    done
+    success "� All GPU deployments completed!"
+    show_api_documentation
+elif [ "$GPU_MODE" = "specific" ]; then
+    info "Deploying on specified GPUs: $GPU_LIST"
+    IFS=',' read -ra GPU_IDS <<< "$GPU_LIST"
+    for gpu_id in "${GPU_IDS[@]}"; do
+        deploy_gpu $gpu_id
+    done
+    success "🚀 Multi-GPU deployment completed!"
+    show_api_documentation
 fi
 
 exit 0
