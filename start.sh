@@ -188,9 +188,70 @@ validate_docker() {
     fi
 }
 
+validate_gpu() {
+    echo "Validating GPU configuration..."
+    
+    # Check if gpu_info.py exists and is executable
+    if [ ! -x "${SCRIPT_DIR}/utils/gpu_info.py" ]; then
+        chmod +x "${SCRIPT_DIR}/utils/gpu_info.py"
+    fi
+    
+    # Check if xpu-smi is available (through gpu_info.py)
+    if ! "${SCRIPT_DIR}/utils/gpu_info.py" count >/dev/null 2>&1; then
+        error "xpu-smi not found or not working. Please install Intel XPU manager."
+    fi
+    
+    # Check GPU count
+    local gpu_count
+    gpu_count=$("${SCRIPT_DIR}/utils/gpu_info.py" count)
+    if [ "${gpu_count}" -eq 0 ]; then
+        error "No Intel GPUs found. Please ensure Intel GPU drivers are installed and GPUs are available."
+    fi
+    
+    # Show GPU info
+    echo "Available GPUs (${gpu_count} devices):"
+    "${SCRIPT_DIR}/utils/gpu_info.py" info
+    
+    # Get GPU devices for validation and set environment variable
+    GPU_DEVICES=$("${SCRIPT_DIR}/utils/gpu_info.py" devices)
+    if [ -z "${GPU_DEVICES}" ]; then
+        error "Failed to get GPU device paths"
+    fi
+    export GPU_DEVICES
+    
+    # Validate access to GPU devices
+    IFS=',' read -ra DEVICE_ARRAY <<< "${GPU_DEVICES}"
+    for device in "${DEVICE_ARRAY[@]}"; do
+        if ! [ -r "${device}" ]; then
+            error "No read access to GPU device: ${device}\nPlease ensure current user is in the 'render' group."
+        fi
+    done
+    
+    echo "GPU validation completed (${gpu_count} GPUs available)"
+}
+
 check_port_available() {
-    if lsof -i:8000 >/dev/null 2>&1; then
-        error "Port 8000 is already in use. Please stop any running services on this port."
+    # Check if port_check.py exists and is executable
+    if [ ! -x "${SCRIPT_DIR}/utils/port_check.py" ]; then
+        chmod +x "${SCRIPT_DIR}/utils/port_check.py"
+    fi
+    
+    # Check if port 8000 is available
+    local port_status
+    port_status=$("${SCRIPT_DIR}/utils/port_check.py" check)
+    
+    if [ "${port_status}" != "available" ]; then
+        echo "Port 8000 is already in use. Finding an alternative port..."
+        local available_port
+        available_port=$("${SCRIPT_DIR}/utils/port_check.py" find)
+        if [ -z "${available_port}" ]; then
+            error "No available ports found. Please free up a port."
+        fi
+        export SERVICE_PORT="${available_port}"
+        echo "Using alternative port: ${SERVICE_PORT}"
+    else
+        export SERVICE_PORT=8000
+        echo "Using default port: ${SERVICE_PORT}"
     fi
 }
 
@@ -347,6 +408,7 @@ fi
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 validate_docker
+validate_gpu
 check_port_available
 validate_model_path
 

@@ -1,6 +1,6 @@
 services:
   auth-service:
-    build: 
+    build:
       context: ./services/auth
     container_name: tgi_auth
     environment:
@@ -13,30 +13,33 @@ services:
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      test:
+        - CMD
+        - curl
+        - -f
+        - http://localhost:3000/health
       interval: 10s
       timeout: 5s
       retries: 3
       start_period: 10s
     expose:
-      - "3000"
+      - '3000'
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.services.auth.loadbalancer.server.port=3000"
-      - "traefik.http.routers.auth.rule=PathPrefix(`/validate`)"
+      - traefik.enable=true
+      - traefik.http.services.auth.loadbalancer.server.port=3000
+      - traefik.http.routers.auth.rule=PathPrefix(`/validate`)
     restart: unless-stopped
-
   proxy:
     image: traefik:v3.2.1
     container_name: tgi_proxy
     command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--entrypoints.web.address=:8000"
-      - "--accesslog=true"
-      - "--providers.file.directory=/etc/traefik/dynamic"
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:${SERVICE_PORT}
+      - --accesslog=true
+      - --providers.file.directory=/etc/traefik/dynamic
     ports:
-      - "8000:8000"
+      - ${SERVICE_PORT}:${SERVICE_PORT}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
       - ./traefik:/etc/traefik/dynamic:ro
@@ -49,12 +52,17 @@ services:
     environment:
       - VALID_TOKEN=${VALID_TOKEN}
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://auth-service:3000/health"]
+      test:
+        - CMD
+        - wget
+        - --no-verbose
+        - --tries=1
+        - --spider
+        - http://auth-service:3000/health
       interval: 10s
       timeout: 5s
       retries: 3
     restart: unless-stopped
-
   tgi:
     image: ghcr.io/huggingface/text-generation-inference:${TGI_VERSION}
     container_name: ${MODEL_NAME}
@@ -62,12 +70,11 @@ services:
     privileged: true
     cap_add:
       - sys_nice
-    devices:
-      - /dev/dri:/dev/dri
+    devices: ${GPU_DEVICES:-/dev/dri:/dev/dri}
     ipc: host
     shm_size: ${SHM_SIZE}
     expose:
-      - "80"
+      - '80'
     networks:
       - tgi_net
     environment:
@@ -80,22 +87,13 @@ services:
       - MAX_INPUT_LENGTH=${MAX_INPUT_LENGTH}
       - MAX_WAITING_TOKENS=${MAX_WAITING_TOKENS}
       - HF_HOME=/root/.cache/huggingface
-    command: >
-      --model-id ${MODEL_ID}
-      --dtype bfloat16
-      --max-concurrent-requests ${MAX_CONCURRENT_REQUESTS}
-      --max-batch-size ${MAX_BATCH_SIZE}
-      --max-total-tokens ${MAX_TOTAL_TOKENS}
-      --max-input-length ${MAX_INPUT_LENGTH}
-      --max-waiting-tokens ${MAX_WAITING_TOKENS}
-      --cuda-graphs 0
-      --port 80
-      --json-output
+    command: |
+      --model-id ${MODEL_ID} --dtype bfloat16 --max-concurrent-requests ${MAX_CONCURRENT_REQUESTS} --max-batch-size ${MAX_BATCH_SIZE} --max-total-tokens ${MAX_TOTAL_TOKENS} --max-input-length ${MAX_INPUT_LENGTH} --max-waiting-tokens ${MAX_WAITING_TOKENS} --cuda-graphs 0 --port 80 --json-output
     labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.tgi.rule=PathPrefix(`/generate`)"
-      - "traefik.http.routers.tgi.middlewares=chain-auth@file"
-      - "traefik.http.services.tgi.loadbalancer.server.port=80"
+      - traefik.enable=true
+      - traefik.http.routers.tgi.rule=PathPrefix(`/generate`)
+      - traefik.http.routers.tgi.middlewares=chain-auth@file
+      - traefik.http.services.tgi.loadbalancer.server.port=80
     env_file:
       - .env
     depends_on:
@@ -105,8 +103,7 @@ services:
         condition: service_healthy
     volumes:
       - ${HF_CACHE_DIR:-/tmp/no_cache}:/root/.cache/huggingface:rw
-
 networks:
   tgi_net:
     name: ${MODEL_NAME}_network
-    driver: bridge 
+    driver: bridge
