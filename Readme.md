@@ -195,32 +195,6 @@ curl http://localhost:8000/health
 curl http://localhost:8000/v1/models
 ```
 
-## Contributing
-
-Contributions are welcome! Please read our [Contributing Guidelines](CONTRIBUTING.md) first.
-
-## License Notes
-
-Each model has its own license terms. Please review individual model READMEs before use.
-
-## Accessing the Deployed Service
-
-Once deployed, the service is accessible through the Traefik proxy on port 8000. The endpoint for text generation is:
-
-```http
-POST http://localhost:8000/generate
-```
-
-All requests must include proper authentication headers as configured in the auth service.
-
-Example curl request:
-```bash
-curl -X POST http://localhost:8000/generate \
-  -H "Authorization: Bearer your-valid-token" \
-  -H "Content-Type: application/json" \
-  -d '{"inputs": "Your prompt here", "parameters": {}}'
-```
-
 ## Model Management
 
 ### Stopping Models
@@ -245,4 +219,25 @@ You can clean up resources for a specific model or all models:
 ./cleanup.sh
 ```
 
-These updates to the `Readme.md` provide clear instructions on how to use the new options for stopping and cleaning up models, ensuring users can easily manage their models with the updated scripts.
+## License Notes
+
+Each model has its own license terms. Please review individual model READMEs before use.
+
+## Accessing the Deployed Service
+
+Once deployed, the service is accessible through the Traefik proxy on port 8000. The endpoint for text generation is:
+
+```http
+POST http://localhost:8000/generate
+```
+
+All requests must include proper authentication headers as configured in the auth service.
+
+Example curl request:
+```bash
+curl -X POST http://localhost:8000/generate \
+  -H "Authorization: Bearer your-valid-token" \
+  -H "Content-Type: application/json" \
+  -d '{"inputs": "Your prompt here", "parameters": {}}'
+```
+
