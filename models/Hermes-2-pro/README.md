@@ -1,12 +1,12 @@
 # Hermes-2-pro
 
-NousResearch's Hermes-2-pro running on Text Generation Inference (TGI). A powerful open-source model fine-tuned for instruction following, reasoning, and general knowledge tasks.
+NousResearch's Hermes-2-pro running on Text Generation Inference (TGI). A powerful model based on Llama-3-8B fine-tuned for instruction following, reasoning, and general knowledge tasks.
 
-⚠️ **License Notice**: Before using this model, please review the license terms and usage rights on the [Hugging Face model page](https://huggingface.co/NousResearch/Hermes-2-pro).
+⚠️ **License Notice**: Before using this model, please review the license terms and usage rights on the [Hugging Face model page](https://huggingface.co/NousResearch/Hermes-2-Pro-Llama-3-8B).
 
 ## Model Information
 
-- **Model**: NousResearch/Hermes-2-pro
+- **Model**: NousResearch/Hermes-2-Pro-Llama-3-8B
 - **Context Window**: 4096 tokens
 - **Strengths**: Instruction following, reasoning, creative writing
 - **Optimal Use Cases**: 
@@ -19,7 +19,7 @@ NousResearch's Hermes-2-pro running on Text Generation Inference (TGI). A powerf
 
 ```env
 MODEL_NAME=hermes-2-pro-tgi
-MODEL_ID=NousResearch/Hermes-2-pro
+MODEL_ID=NousResearch/Hermes-2-Pro-Llama-3-8B
 TGI_VERSION=2.4.0-intel-xpu
 SHM_SIZE=2g
 MAX_CONCURRENT_REQUESTS=1

@@ -1,0 +1,47 @@
+services:
+  tgi:
+    image: ghcr.io/huggingface/text-generation-inference:${TGI_VERSION}
+    container_name: ${SERVICE_NAME}
+    restart: unless-stopped
+    cap_add:
+      - sys_nice
+      - IPC_LOCK
+    ulimits:
+      memlock: -1
+    devices:
+      - "/dev/dri/card${GPU_NUM}:/dev/dri/card${GPU_NUM}"
+      - "/dev/dri/renderD${RENDER_NUM}:/dev/dri/renderD${RENDER_NUM}"
+    ipc: host
+    shm_size: ${SHM_SIZE}
+    expose:
+      - '80'
+    networks:
+      - tgi_net
+    environment:
+      - VALID_TOKEN=${VALID_TOKEN}
+      - MODEL_NAME=${MODEL_NAME}
+      - MODEL_ID=${MODEL_ID}
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS}
+      - MAX_BATCH_SIZE=${MAX_BATCH_SIZE}
+      - MAX_TOTAL_TOKENS=${MAX_TOTAL_TOKENS}
+      - MAX_INPUT_LENGTH=${MAX_INPUT_LENGTH}
+      - MAX_WAITING_TOKENS=${MAX_WAITING_TOKENS}
+      - HF_HOME=/root/.cache/huggingface
+      - RUST_LOG=info,text_generation_router=debug
+    command: |
+      --model-id ${MODEL_ID} --dtype bfloat16 --max-concurrent-requests ${MAX_CONCURRENT_REQUESTS} --max-batch-size ${MAX_BATCH_SIZE} --max-total-tokens ${MAX_TOTAL_TOKENS} --max-input-length ${MAX_INPUT_LENGTH} --max-waiting-tokens ${MAX_WAITING_TOKENS} --cuda-graphs 0 --port 80 --json-output
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.${SERVICE_NAME}.rule=PathPrefix(`${ROUTE_PREFIX}`)
+      - traefik.http.routers.${SERVICE_NAME}.middlewares=chain-auth@file,${SERVICE_NAME}-strip
+      - traefik.http.middlewares.${SERVICE_NAME}-strip.stripprefix.prefixes=${ROUTE_PREFIX}
+      - traefik.http.services.${SERVICE_NAME}.loadbalancer.server.port=80
+    env_file:
+      - .env
+    volumes:
+      - ${HF_CACHE_DIR:-/tmp/no_cache}:/root/.cache/huggingface:rw
+
+networks:
+  tgi_net:
+    external: true
+    name: tgi_network

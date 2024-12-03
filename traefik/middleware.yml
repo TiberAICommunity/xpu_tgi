@@ -26,6 +26,7 @@ http:
     chain-auth:
       chain:
         middlewares:
+          - auth-forward
           - global-limit
           - ip-limit
           - security-headers

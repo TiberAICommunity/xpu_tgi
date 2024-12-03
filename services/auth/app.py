@@ -82,25 +82,59 @@ async def ban_middleware(request: Request, call_next):
 async def validate_token(request: Request, authorization: Optional[str] = Header(None)):
     client_ip = request.client.host
     try:
-        if not authorization or not authorization.startswith("Bearer "):
-            logger.warning(f"Invalid authorization header from IP: {client_ip}")
+        if not authorization:
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": "No authorization provided",
+                    "message": "Please provide a Bearer token in the Authorization header",
+                    "example": "Authorization: Bearer your_token_here"
+                }
+            )
+
+        if not authorization.startswith("Bearer "):
+            logger.warning(f"Invalid authorization header format from IP: {client_ip}")
             update_failed_attempts(client_ip)
-            raise HTTPException(status_code=401, detail="Invalid authorization header")
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": "Invalid authorization format",
+                    "message": "Authorization header must start with 'Bearer '",
+                    "example": "Authorization: Bearer your_token_here"
+                }
+            )
+        
         token = authorization.split(" ")[1]
         if token != VALID_TOKEN:
             logger.warning(f"Invalid token attempt from IP: {client_ip}")
             update_failed_attempts(client_ip)
-            raise HTTPException(status_code=401, detail="Invalid token")
+            return JSONResponse(
+                status_code=401,
+                content={
+                    "detail": "Invalid token",
+                    "message": "The provided token is not valid"
+                }
+            )
 
         reset_failed_attempts(client_ip)
-
         return JSONResponse(
-            content={"status": "valid"},
+            content={
+                "status": "valid",
+                "message": "Token is valid",
+                "client_ip": client_ip
+            },
             headers={"X-Auth-Status": "valid", "X-Real-IP": client_ip},
         )
+        
     except Exception as e:
         logger.error(f"Error processing request from {client_ip}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "Internal server error",
+                "message": str(e) if app.debug else "An unexpected error occurred"
+            }
+        )
 
 
 @app.get("/health")

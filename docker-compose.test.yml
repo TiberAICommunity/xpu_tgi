@@ -1,0 +1,39 @@
+services:
+  tgi:
+    image: ghcr.io/huggingface/text-generation-inference:${TGI_VERSION}
+    container_name: ${SERVICE_NAME:-tgi_test}
+    restart: "no"  # Don't restart in test mode
+    security_opt:
+      - seccomp=default
+      - no-new-privileges:true
+    cap_add:
+      - sys_nice
+      - IPC_LOCK
+    ulimits:
+      memlock: -1
+    devices: ${GPU_DEVICES:-/dev/dri:/dev/dri}
+    ipc: host
+    shm_size: ${SHM_SIZE:-1g}
+    ports:
+      - "8080:80"  # Direct port mapping for testing
+    environment:
+      - MODEL_ID=${MODEL_ID:?MODEL_ID is required}
+      - MAX_CONCURRENT_REQUESTS=${MAX_CONCURRENT_REQUESTS:-10}
+      - MAX_BATCH_SIZE=${MAX_BATCH_SIZE:-8}
+      - MAX_TOTAL_TOKENS=${MAX_TOTAL_TOKENS:-1000}
+      - MAX_INPUT_LENGTH=${MAX_INPUT_LENGTH:-512}
+      - MAX_WAITING_TOKENS=${MAX_WAITING_TOKENS:-100}
+      - HF_HOME=/root/.cache/huggingface
+    command: >
+      --model-id ${MODEL_ID}
+      --dtype bfloat16
+      --max-concurrent-requests ${MAX_CONCURRENT_REQUESTS}
+      --max-batch-size ${MAX_BATCH_SIZE}
+      --max-total-tokens ${MAX_TOTAL_TOKENS}
+      --max-input-length ${MAX_INPUT_LENGTH}
+      --max-waiting-tokens ${MAX_WAITING_TOKENS}
+      --cuda-graphs 0
+      --port 80
+      --json-output
+    volumes:
+      - ${HF_CACHE_DIR:-/tmp/no_cache}:/root/.cache/huggingface:rw 
