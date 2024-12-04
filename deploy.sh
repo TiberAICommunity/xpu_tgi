@@ -69,6 +69,14 @@ deploy() {
 
     info "Starting TGI deployment for model: ${model_name}"    
 
+    # Clean up existing services first
+    info "Cleaning up existing services..."
+    if printf 'y\n' | "${SCRIPT_DIR}/service_cleanup.sh"; then
+        success "Cleanup completed"
+    else
+        error "Service cleanup failed with exit code $?"
+    fi
+
     check_gpu_availability    
     info "Running system checks"
     if ! "${SCRIPT_DIR}/init.sh"; then
@@ -91,9 +99,22 @@ deploy() {
     fi
     
     success "Deployment completed successfully!"
+}
 
-    #echo -e "\nService Status:"
-    #"${SCRIPT_DIR}/tgi-status.sh"  # unc
+# -----------------------------
+# Main Script
+# -----------------------------
+main() {
+    if [ $# -eq 1 ] && [[ "$1" == "-h" || "$1" == "--help" ]]; then
+        usage
+    fi
+
+    if [ $# -ne 1 ]; then
+        echo -e "${RED}Error: Invalid number of arguments${NC}"
+        usage
+    fi
+    
+    deploy "$1"
 }
 
 # -----------------------------
@@ -101,9 +122,12 @@ deploy() {
 # -----------------------------
 usage() {
     cat << EOF
-Usage: $0 <model_name>
+Usage: $0 [OPTIONS] <model_name>
 
 Deploy TGI services with a specified model.
+
+Options:
+    -h, --help     Show this help message
 
 Example:
     $0 CodeLlama-7b         # For code generation
@@ -116,17 +140,6 @@ $(ls -1 "${SCRIPT_DIR}/models" 2>/dev/null | grep -v "README.md" || echo "No mod
 Note: Requires available GPU. Use './service_cleanup.sh --gpu <N>' to free up a GPU if needed.
 EOF
     exit 1
-}
-
-# -----------------------------
-# Main Script
-# -----------------------------
-main() {
-    if [ $# -ne 1 ]; then
-        usage
-    fi
-    
-    deploy "$1"
 }
 
 main "$@" 
