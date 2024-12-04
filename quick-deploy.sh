@@ -10,6 +10,19 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
+setup_dependencies() {
+    echo -e "${GREEN}Setting up tools...${NC}"
+    if ! command -v jq &> /dev/null; then
+        echo "jq not found. Attempting to install..."
+        if sudo apt-get update && sudo apt-get install -y jq; then
+            echo "jq installed successfully"
+        else
+            echo "Could not install jq. Using container fallback..."
+            alias jq='docker run --rm -i ghcr.io/jqlang/jq:latest'
+        fi
+    fi
+}
+
 echo -e "${BLUE}
 ===========================================
  Intel XPU Text Generation Inference (TGI)
@@ -32,8 +45,7 @@ if [ $# -eq 0 ]; then
 fi
 
 MODEL_NAME="$1"
-echo -e "${GREEN}Setting up tools...${NC}"
-alias jq='docker run --rm -i ghcr.io/jqlang/jq:latest'
+setup_dependencies
 
 echo -e "${GREEN}Preparing deployment...${NC}"
 if ! git clone https://github.com/tiberaicommunity/xpu_tgi 2>/dev/null; then
@@ -44,13 +56,15 @@ if ! git clone https://github.com/tiberaicommunity/xpu_tgi 2>/dev/null; then
 fi
 
 cd xpu_tgi || exit 1
+
 echo -e "${GREEN}Setting up model cache...${NC}"
 export HF_CACHE_DIR="${HOME}/.cache/huggingface"
 mkdir -p "${HF_CACHE_DIR}"
+
 echo -e "${GREEN}Generating secure token...${NC}"
 export VALID_TOKEN=$(python3 -c "from utils.generate_token import generate_and_set; print(generate_and_set())")
-echo -e "${GREEN}Starting deployment...${NC}"
 
+echo -e "${GREEN}Starting deployment...${NC}"
 if ! ./deploy.sh "${MODEL_NAME}"; then
     echo -e "${RED}Deployment failed. Check the error messages above.${NC}"
     exit 1
@@ -62,4 +76,25 @@ echo -e "${GREEN}To use it in your current session, run:${NC}"
 echo -e "${BLUE}export VALID_TOKEN=${VALID_TOKEN}${NC}"
 echo -e "\n${GREEN}Or add it to your shell configuration file:${NC}"
 echo -e "${BLUE}echo 'export VALID_TOKEN=${VALID_TOKEN}' >> ~/.bashrc${NC}"
+echo -e "${YELLOW}======================================${NC}\n"
+
+echo -e "\n${YELLOW}============= NEXT STEPS ==============${NC}"
+echo -e "${GREEN}1. Access Options:${NC}"
+echo -e "   • Local machine: http://localhost:8000"
+echo -e "   • Remote access: Run './tunnel.sh' for temporary public URL (eval only)"
+echo -e "     (See './tunnel.sh --help' for options and security notes)"
+echo -e "   • SSH tunnel: ssh -L 8000:localhost:8000 user@server"
+
+echo -e "\n${GREEN}2. Test the deployment:${NC}"
+echo -e "   ./tgi-status.sh"
+
+echo -e "\n${GREEN}3. Make a test request:${NC}"
+echo -e "   curl -X POST http://localhost:8000/generate \\"
+echo -e "        -H \"Authorization: Bearer ${VALID_TOKEN}\" \\"
+echo -e "        -H \"Content-Type: application/json\" \\"
+echo -e "        -d '{\"inputs\": \"Hello, how are you?\"}'"
+
+echo -e "\n${GREEN}4. Stop the service:${NC}"
+echo -e "   ./service_cleanup.sh --all     # Stop all services"
+echo -e "   ./service_cleanup.sh --gpu N   # Stop specific GPU"
 echo -e "${YELLOW}======================================${NC}\n"

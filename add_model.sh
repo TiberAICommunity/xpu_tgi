@@ -130,25 +130,24 @@ validate_gpu() {
     
     local gpu_count
     gpu_count=$("${SCRIPT_DIR}/utils/gpu_info.py" count)
-    echo "Debug: Found ${gpu_count} GPUs (0 to $((gpu_count-1)))"
+    #echo "Debug: Found ${gpu_count} GPUs (0 to $((gpu_count-1)))"
     
     if [ "${gpu_count}" -eq 0 ]; then
         error "No Intel GPUs found. Please ensure Intel GPU drivers are installed and GPUs are available."
     fi
     local all_numbers
     all_numbers=$("${SCRIPT_DIR}/utils/gpu_info.py" numbers)
-    echo "Debug: Available GPU numbers: ${all_numbers}"
+    #echo "Debug: Available GPU numbers: ${all_numbers}"
     IFS=',' read -ra ALL_GPUS <<< "${all_numbers}"    
     local used_gpus=","
     while read -r container; do
         if [ -n "${container}" ] && [[ "${container}" =~ _gpu([0-9]+) ]]; then
             local gpu_num="${BASH_REMATCH[1]}"
             used_gpus="${used_gpus}${gpu_num},"
-            echo "Debug: Found container using GPU ${gpu_num}: ${container}"
+            #echo "Debug: Found container using GPU ${gpu_num}: ${container}"
         fi
     done < <(docker ps --format '{{.Names}}' | grep "tgi_" | grep -v "tgi_proxy\|tgi_auth")
-    
-    echo "Debug: GPUs in use: ${used_gpus#,}"
+    #echo "Debug: GPUs in use: ${used_gpus#,}"
     
 
     local available_gpu=""
@@ -166,7 +165,7 @@ validate_gpu() {
     fi
     
     export GPU_NUM="${available_gpu}"
-    echo "Debug [validate_gpu]: Setting GPU_NUM=${GPU_NUM}"
+    #echo "Debug [validate_gpu]: Setting GPU_NUM=${GPU_NUM}"
     info "Selected GPU number: ${GPU_NUM}"
     success "GPU validation completed"
 }
@@ -177,21 +176,19 @@ validate_gpu() {
 
 setup_model_env() {
     info "Setting up model environment"
-    echo "Debug [setup_model_env start]: GPU_NUM=${GPU_NUM}"
-    
+    #echo "Debug [setup_model_env start]: GPU_NUM=${GPU_NUM}"
     source "${MODEL_DIR}/config/model.env"
-    echo "Debug [after source]: GPU_NUM=${GPU_NUM}"
-    
+    #echo "Debug [after source]: GPU_NUM=${GPU_NUM}"
     if [ ! -x "${SCRIPT_DIR}/utils/name_sanitizer.py" ]; then
         chmod +x "${SCRIPT_DIR}/utils/name_sanitizer.py"
     fi
     
     local sanitized_output
     sanitized_output=$("${SCRIPT_DIR}/utils/name_sanitizer.py" "${MODEL_NAME}")
-    
     SERVICE_NAME=$(echo "${sanitized_output}" | head -n1)
     local base_route=$(echo "${sanitized_output}" | tail -n1)
     ROUTE_PREFIX="${base_route%/generate}/gpu${GPU_NUM}/generate"
+    
     export SERVICE_NAME
     export ROUTE_PREFIX
     export MODEL_NAME
@@ -205,6 +202,7 @@ setup_model_env() {
     export MAX_INPUT_LENGTH=${MAX_INPUT_LENGTH:-512}
     export MAX_WAITING_TOKENS=${MAX_WAITING_TOKENS:-100}
     export HF_CACHE_DIR=${HF_CACHE_DIR:-"/tmp/no_cache"}    
+   
     if [ -z "${VALID_TOKEN}" ] && [ -f "${SCRIPT_DIR}/.env" ]; then
         source "${SCRIPT_DIR}/.env"
     fi
@@ -214,23 +212,23 @@ setup_model_env() {
     fi
     
     export RENDER_NUM=$((128 + GPU_NUM))
-    echo "Debug [setup_model_env end]: GPU_NUM=${GPU_NUM}, RENDER_NUM=${RENDER_NUM}"
+    #echo "Debug [setup_model_env end]: GPU_NUM=${GPU_NUM}, RENDER_NUM=${RENDER_NUM}"
     success "Model environment setup completed"
 }
 
 start_model_service() {
     info "Starting model service: ${MODEL_NAME}"
-    echo "Debug [start_model_service]: GPU_NUM=${GPU_NUM}, RENDER_NUM=${RENDER_NUM}"
+    #echo "Debug [start_model_service]: GPU_NUM=${GPU_NUM}, RENDER_NUM=${RENDER_NUM}"
     local project_name="tgi-gpu${GPU_NUM}"
-    echo "Debug: Environment variables:"
-    echo "SERVICE_NAME: ${SERVICE_NAME}"
-    echo "MODEL_NAME: ${MODEL_NAME}"
+    #echo "Debug: Environment variables:"
+    #echo "SERVICE_NAME: ${SERVICE_NAME}"
+    #echo "MODEL_NAME: ${MODEL_NAME}"
     echo "MODEL_ID: ${MODEL_ID}"
-    echo "TGI_VERSION: ${TGI_VERSION}"
-    echo "GPU_NUM: ${GPU_NUM}"
+    #echo "TGI_VERSION: ${TGI_VERSION}"
+    #echo "GPU_NUM: ${GPU_NUM}"
     echo "ROUTE_PREFIX: ${ROUTE_PREFIX}"
     echo "VALID_TOKEN: ${VALID_TOKEN:0:10}..."
-    echo "Project Name: ${project_name}"
+    #echo "Project Name: ${project_name}"
     
     if [ "${DEBUG:-}" = "true" ]; then
         echo -e "\nFull docker-compose configuration:"
