@@ -34,6 +34,13 @@ def set_env_token(token: str):
     return True
 
 
+def generate_and_set() -> str:
+    """Generate token, set it, and return it."""
+    token = generate_secure_token()
+    set_env_token(token)
+    return token
+
+
 def main():
     token = generate_secure_token()
     logger.info("\nToken generated successfully:")
@@ -46,6 +53,9 @@ def main():
     if set_env_token(token):
         logger.info("\nToken has been set in .env file!")
         logger.info("You can now start any model with this token")
+    
+    # Print token for capture by shell scripts
+    print(token)
 
 
 if __name__ == "__main__":
