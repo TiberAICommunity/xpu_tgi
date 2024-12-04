@@ -64,6 +64,12 @@ mkdir -p "${HF_CACHE_DIR}"
 echo -e "${GREEN}Generating secure token...${NC}"
 export VALID_TOKEN=$(python3 -c "from utils.generate_token import generate_and_set; print(generate_and_set())")
 
+TEMP_TOKEN_FILE=$(mktemp)
+echo "export VALID_TOKEN=${VALID_TOKEN}" > "${TEMP_TOKEN_FILE}"
+chmod 600 "${TEMP_TOKEN_FILE}"
+source "${TEMP_TOKEN_FILE}"
+rm "${TEMP_TOKEN_FILE}"
+
 echo -e "${GREEN}Starting deployment...${NC}"
 if ! ./deploy.sh "${MODEL_NAME}"; then
     echo -e "${RED}Deployment failed. Check the error messages above.${NC}"
@@ -71,10 +77,9 @@ if ! ./deploy.sh "${MODEL_NAME}"; then
 fi
 
 echo -e "\n${YELLOW}=============== IMPORTANT ===============${NC}"
-echo -e "${GREEN}Your authentication token has been generated.${NC}"
-echo -e "${GREEN}To use it in your current session, run:${NC}"
-echo -e "${BLUE}export VALID_TOKEN=${VALID_TOKEN}${NC}"
-echo -e "\n${GREEN}Or add it to your shell configuration file:${NC}"
+echo -e "${GREEN}Your authentication token has been generated and loaded.${NC}"
+echo -e "${GREEN}Token is available as VALID_TOKEN in your current session.${NC}"
+echo -e "\n${GREEN}To persist the token, add to your shell configuration:${NC}"
 echo -e "${BLUE}echo 'export VALID_TOKEN=${VALID_TOKEN}' >> ~/.bashrc${NC}"
 echo -e "${YELLOW}======================================${NC}\n"
 
@@ -87,12 +92,6 @@ echo -e "   • SSH tunnel: ssh -L 8000:localhost:8000 user@server"
 
 echo -e "\n${GREEN}2. Test the deployment:${NC}"
 echo -e "   ./tgi-status.sh"
-
-echo -e "\n${GREEN}3. Make a test request:${NC}"
-echo -e "   curl -X POST http://localhost:8000/generate \\"
-echo -e "        -H \"Authorization: Bearer ${VALID_TOKEN}\" \\"
-echo -e "        -H \"Content-Type: application/json\" \\"
-echo -e "        -d '{\"inputs\": \"Hello, how are you?\"}'"
 
 echo -e "\n${GREEN}4. Stop the service:${NC}"
 echo -e "   ./service_cleanup.sh --all     # Stop all services"

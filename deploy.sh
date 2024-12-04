@@ -62,6 +62,20 @@ check_gpu_availability() {
 }
 
 # -----------------------------
+# Service Check Functions
+# -----------------------------
+check_base_services() {
+    info "Checking existing services..."
+    
+    # Check if auth and traefik are running
+    if docker ps --format '{{.Names}}' | grep -q "tgi_auth" && \
+       docker ps --format '{{.Names}}' | grep -q "tgi_proxy"; then
+        return 0
+    fi
+    return 1
+}
+
+# -----------------------------
 # Main Deployment Function
 # -----------------------------
 deploy() {
@@ -69,33 +83,33 @@ deploy() {
 
     info "Starting TGI deployment for model: ${model_name}"    
 
-    # Clean up existing services first
-    info "Cleaning up existing services..."
-    if printf 'y\n' | "${SCRIPT_DIR}/service_cleanup.sh"; then
-        success "Cleanup completed"
-    else
-        error "Service cleanup failed with exit code $?"
-    fi
+    check_gpu_availability
 
-    check_gpu_availability    
-    info "Running system checks"
-    if ! "${SCRIPT_DIR}/init.sh"; then
-        error "System initialization failed"
-    fi
-    
-    info "Setting up Docker network"
-    if ! "${SCRIPT_DIR}/setup_network.sh"; then
-        error "Network setup failed"
-    fi
-    
-    info "Starting base services"
-    if ! "${SCRIPT_DIR}/start_base.sh"; then
-        error "Base services startup failed"
+    # Check if base services are running
+    if check_base_services; then
+        info "Base services already running, proceeding with model deployment"
+    else
+        info "Setting up base infrastructure..."
+        
+        info "Running system checks"
+        if ! "${SCRIPT_DIR}/init.sh"; then
+            error "System initialization failed. Try running './service_cleanup.sh' and try again."
+        fi
+        
+        info "Setting up Docker network"
+        if ! "${SCRIPT_DIR}/setup_network.sh"; then
+            error "Network setup failed. Try running './service_cleanup.sh' and try again."
+        fi
+        
+        info "Starting base services"
+        if ! "${SCRIPT_DIR}/start_base.sh"; then
+            error "Base services startup failed. Try running './service_cleanup.sh' and try again."
+        fi
     fi
     
     info "Adding model service"
     if ! "${SCRIPT_DIR}/add_model.sh" "${model_name}"; then
-        error "Model service deployment failed"
+        error "Model service deployment failed. Try running './service_cleanup.sh' and try again."
     fi
     
     success "Deployment completed successfully!"
