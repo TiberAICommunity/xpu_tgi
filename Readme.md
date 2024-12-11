@@ -156,6 +156,12 @@ xpu-smi dump -m18
 
 ---
 
+## Load Balancing
+
+For instructions on how to set up multiple instances of the TGI service and load balance them, see [load-balancing.md](load-balancing.md).
+
+___
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please submit a Pull Request or open an issue to discuss major changes.
