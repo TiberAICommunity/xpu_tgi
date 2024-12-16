@@ -50,17 +50,17 @@ show_base_services() {
     else
         echo "Proxy Service: Not Running ✗"
     fi
-    
+
     echo -e "\n----------------------------------------"
 }
 
 show_model_services() {
     info "Model Services Status"
-    
+
     echo "Running Model Services:"
-    docker ps --filter "name=tgi_" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | \
+    docker ps --filter "name=tgi_" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" |
         grep -v "tgi_auth\|tgi_proxy" || true
-        
+
     echo -e "\nGPU Allocations:"
     docker ps -q --filter "name=tgi_" | while read -r container_id; do
         local container_name
@@ -72,13 +72,13 @@ show_model_services() {
             docker inspect --format='{{range .HostConfig.Devices}}  {{.PathOnHost}}{{"\n"}}{{end}}' "$container_id" | grep "/dev/dri"
         fi
     done
-    
+
     echo -e "\n----------------------------------------"
 }
 
 show_service_urls() {
     info "Service URLs"
-    
+
     if [ -f "${SERVICE_LIST_FILE}" ]; then
         echo "Active Endpoints:"
         docker ps --format '{{.Names}}' | grep "tgi_" | grep -v "tgi_auth\|tgi_proxy" | while read -r container; do
@@ -92,18 +92,18 @@ show_service_urls() {
     else
         echo "No service list file found"
     fi
-    
+
     echo -e "\n----------------------------------------"
 }
 
 show_helpful_commands() {
     info "Helpful Commands"
-    
+
     print_help
 }
 
 print_help() {
-    cat << EOF
+    cat <<EOF
 
 ----------------------------------------
 
@@ -142,4 +142,4 @@ main() {
     show_helpful_commands
 }
 
-main 
+main

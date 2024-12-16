@@ -35,7 +35,7 @@ error() {
 # Validation Functions
 # -----------------------------
 validate_files() {
-    info "Validating required files" 
+    info "Validating required files"
     if [ ! -f "${COMPOSE_FILE}" ]; then
         error "Base services compose file not found: ${COMPOSE_FILE}"
     fi
@@ -65,13 +65,12 @@ validate_docker() {
     if ! command -v docker >/dev/null 2>&1; then
         error "Docker is not installed. Please install Docker first."
     fi
-    
+
     if ! docker info >/dev/null 2>&1; then
         error "Docker daemon is not running or current user doesn't have permission to access it."
     fi
     success "Docker validation completed"
 }
-
 
 check_port_available() {
     info "Checking port availability"
@@ -107,58 +106,58 @@ start_base_services() {
     if ! docker compose -f "${COMPOSE_FILE}" up -d --build; then
         error "Failed to start base services. Check ${COMPOSE_FILE} and logs"
     fi
-    
+
     success "Base services started successfully"
 }
 
 wait_for_services() {
     info "Waiting for services to be healthy"
-    
+
     local max_attempts=30
     local attempt=1
-    
+
     while [ $attempt -le $max_attempts ]; do
         local unhealthy=false
         for service in "tgi_auth" "tgi_proxy"; do
             local health_status
             health_status=$(docker inspect --format='{{.State.Health.Status}}' "${service}" 2>/dev/null || echo "not_found")
-            
+
             case "${health_status}" in
-                "healthy")
-                    continue
-                    ;;
-                "not_found")
-                    error "Service ${service} not found"
-                    ;;
-                *)
-                    unhealthy=true
-                    break
-                    ;;
+            "healthy")
+                continue
+                ;;
+            "not_found")
+                error "Service ${service} not found"
+                ;;
+            *)
+                unhealthy=true
+                break
+                ;;
             esac
         done
-        
+
         if [ "${unhealthy}" = false ]; then
             success "All services are healthy"
             return 0
         fi
-        
+
         echo -n "."
         sleep 2
         attempt=$((attempt + 1))
     done
-    
+
     error "Services did not become healthy within the timeout period"
 }
 
 update_service_list() {
     info "Updating service list"
-    
+
     local timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
     local base_url="http://localhost:${SERVICE_PORT}"
     local temp_file="${SERVICE_LIST_FILE}.tmp"
     if ! jq --arg timestamp "${timestamp}" \
-           --arg base_url "${base_url}" \
-           '.services += [
+        --arg base_url "${base_url}" \
+        '.services += [
              {
                "name": "auth",
                "type": "base",
@@ -171,10 +170,10 @@ update_service_list() {
                "url": $base_url,
                "started_at": $timestamp
              }
-           ]' "${SERVICE_LIST_FILE}" > "${temp_file}"; then
+           ]' "${SERVICE_LIST_FILE}" >"${temp_file}"; then
         error "Failed to update service list JSON"
     fi
-    
+
     mv "${temp_file}" "${SERVICE_LIST_FILE}"
     success "Service list updated"
 }
@@ -184,7 +183,7 @@ update_service_list() {
 # -----------------------------
 main() {
     info "Starting TGI base services"
-    
+
     validate_docker
     validate_network
     check_port_available
@@ -195,7 +194,7 @@ main() {
     start_base_services
     wait_for_services
     update_service_list
-    
+
     success "Base services setup completed successfully"
     echo -e "\nService Status:"
     echo "- Auth Service: http://localhost:${SERVICE_PORT}/validate"
@@ -204,4 +203,4 @@ main() {
     echo "Run ./add_model.sh <model_directory> to add TGI services"
 }
 
-main 
+main

@@ -12,7 +12,7 @@ NC='\033[0m'
 
 setup_dependencies() {
     echo -e "${GREEN}Setting up tools...${NC}"
-    if ! command -v jq &> /dev/null; then
+    if ! command -v jq &>/dev/null; then
         echo "jq not found. Attempting to install..."
         if sudo apt-get update && sudo apt-get install -y jq; then
             echo "jq installed successfully"
@@ -65,7 +65,7 @@ echo -e "${GREEN}Generating secure token...${NC}"
 export VALID_TOKEN=$(python3 -c "from utils.generate_token import generate_and_set; print(generate_and_set())")
 
 TEMP_TOKEN_FILE=$(mktemp)
-echo "export VALID_TOKEN=${VALID_TOKEN}" > "${TEMP_TOKEN_FILE}"
+echo "export VALID_TOKEN=${VALID_TOKEN}" >"${TEMP_TOKEN_FILE}"
 chmod 600 "${TEMP_TOKEN_FILE}"
 source "${TEMP_TOKEN_FILE}"
 rm "${TEMP_TOKEN_FILE}"

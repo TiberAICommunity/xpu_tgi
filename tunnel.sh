@@ -57,25 +57,26 @@ main() {
 
     while [[ $# -gt 0 ]]; do
         case $1 in
-            -h|--help)
-                show_help
-                ;;
-            --port)
-                port="$2"
-                shift 2
-                ;;
-            *)
-                echo "Unknown option: $1"
-                show_help
-                ;;
+        -h | --help)
+            show_help
+            ;;
+        --port)
+            port="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            show_help
+            ;;
         esac
     done
 
     setup_cloudflared
     echo -e "\n\033[1;34m→ Starting Cloudflare tunnel...\033[0m"
-    cloudflared tunnel --url "http://localhost:${port}" 2>&1 & TUNNEL_PID=$!
+    cloudflared tunnel --url "http://localhost:${port}" 2>&1 &
+    TUNNEL_PID=$!
     echo -e "\n\033[1;33m📌 Tunnel is running. Press CTRL+C to stop.\033[0m"
     wait $TUNNEL_PID
 }
 
-main "$@" 
+main "$@"
