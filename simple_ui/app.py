@@ -120,6 +120,97 @@ st.markdown(
         white-space: pre-wrap;
         font-family: monospace;
     }
+    
+    /* Note blocks */
+    blockquote {
+        background-color: #e7f3ec;
+        border-left: 4px solid #2e7d32;
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 0 8px 8px 0;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    
+    blockquote p {
+        color: #1b5e20;
+        margin: 0;
+        font-size: 1rem;
+        line-height: 1.6;
+    }
+    
+    /* Code blocks */
+    pre {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        overflow-x: auto;
+    }
+    
+    code {
+        font-family: 'Roboto Mono', monospace;
+        font-size: 0.9rem;
+    }
+    
+    /* Headers hierarchy */
+    h2 {
+        color: #2196F3;
+        font-size: 1.8rem !important;
+        margin-top: 2rem !important;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #e9ecef;
+    }
+    
+    h3 {
+        color: #1976D2;
+        font-size: 1.5rem !important;
+        margin-top: 1.5rem !important;
+    }
+    
+    /* Lists */
+    ul, ol {
+        padding-left: 1.5rem;
+        margin: 1rem 0;
+    }
+    
+    li {
+        margin: 0.5rem 0;
+        line-height: 1.6;
+    }
+    
+    /* Tables */
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 1rem 0;
+    }
+    
+    th, td {
+        padding: 0.75rem;
+        border: 1px solid #dee2e6;
+    }
+    
+    th {
+        background-color: #f8f9fa;
+        font-weight: 600;
+    }
+    
+    /* Important notes */
+    .note {
+        background-color: #e3f2fd;
+        border-left: 4px solid #2196F3;
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 0 8px 8px 0;
+    }
+    
+    .warning {
+        background-color: #fff3e0;
+        border-left: 4px solid #ff9800;
+        padding: 1rem;
+        margin: 1rem 0;
+        border-radius: 0 8px 8px 0;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -205,8 +296,10 @@ with tab1:
                                 <div class="generated-text">
                                     <pre>{}</pre>
                                 </div>
-                                """.format(full_text),
-                                unsafe_allow_html=True
+                                """.format(
+                                    full_text
+                                ),
+                                unsafe_allow_html=True,
                             )
                         except (requests.exceptions.RequestException, ValueError) as e:
                             st.error(f"Generation Error: {str(e)}")

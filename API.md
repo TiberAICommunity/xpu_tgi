@@ -1,5 +1,3 @@
-# TGI Service API Documentation
-
 ## Authentication
 The authentication token is displayed in the console output when the service is first started. You should save this token for future use.
 
@@ -22,6 +20,10 @@ Example:
 ```
 http://localhost:8000/hermes-2-pro-tgi/gpu0
 ```
+
+> 💡 **URL Access Options:**
+> - **Local Access**: Use `localhost:8000` when accessing the API from the same machine
+> - **Remote Access**: If using tunnel.sh with Cloudflare, use your tunnel URL (e.g., `https://your-tunnel-url/<model-name>/gpu<number>`) to access the API from anywhere
 
 ## API Endpoints
 
