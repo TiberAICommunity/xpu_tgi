@@ -32,10 +32,34 @@ fi
 
 # Load model configuration
 source "$MODEL_CONFIG"
-echo "📚 Loaded model configuration for: $MODEL_NAME"
+echo -e "\n📚 Model Configuration Summary"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "🏷️  Model Name: $MODEL_NAME"
 echo "🤖 Model ID: $MODEL_ID"
-echo "📝 Model type: ${MODEL_TYPE:-TGI_LLM}"
-echo "📊 Max tokens: ${MAX_TOTAL_TOKENS:-1024}"
+echo "📝 Model Type: ${MODEL_TYPE:-TGI_LLM}"
+echo "📊 Max Total Tokens: ${MAX_TOTAL_TOKENS:-1024}"
+echo "📏 Max Input Length: ${MAX_INPUT_LENGTH:-512}"
+echo "🔄 Max Concurrent Requests: ${MAX_CONCURRENT_REQUESTS:-1}"
+echo "📦 Max Batch Size: ${MAX_BATCH_SIZE:-1}"
+echo "🎯 TGI Version: ${TGI_VERSION}"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+echo -e "\n🔍 Validating required environment variables..."
+REQUIRED_VARS=("MODEL_NAME" "MODEL_ID" "MODEL_TYPE" "MAX_TOTAL_TOKENS" "MAX_INPUT_LENGTH")
+MISSING_VARS=()
+
+for var in "${REQUIRED_VARS[@]}"; do
+    if [ -z "${!var}" ]; then
+        MISSING_VARS+=("$var")
+    fi
+done
+
+if [ ${#MISSING_VARS[@]} -ne 0 ]; then
+    echo "❌ Error: Missing required environment variables:"
+    printf '%s\n' "${MISSING_VARS[@]}"
+    exit 1
+fi
+echo "✅ All required environment variables are set"
 
 # ------------------------------------------------------------------------------
 # Check Auth Token
@@ -50,7 +74,6 @@ fi
 
 [ -f ".auth_token.env" ] && source .auth_token.env
 
-# Export model info for UI
 export MODEL_NAME
 export MODEL_ID
 export MODEL_TYPE
