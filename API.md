@@ -282,9 +282,9 @@ Get information about the loaded model.
 Example Response:
 ```json
 {
-    "model_id": "TheBloke/OpenHermes-2.5-Mistral-7B-GGUF",
-    "model_dtype": "float16",
-    "model_device_type": "cuda",
+    "model_id": "facebook/llama3.1-8b",
+    "model_dtype": "bfloat16",
+    "model_device_type": "xpu",
     "model_pipeline_tag": "text-generation",
     "max_sequence_length": 4096,
     "timestamp": "2024-01-15T12:34:56.789Z",
