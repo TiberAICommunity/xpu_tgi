@@ -182,10 +182,10 @@ check_gpu_configuration() {
 
 check_token_configuration() {
     info "Checking authentication token"
-    local token_file="${SCRIPT_DIR}/.auth_token"
+    local token_file="${SCRIPT_DIR}/.auth_token_tgi"
     
     if [ -z "${VALID_TOKEN:-}" ] && [ ! -f "${token_file}" ]; then
-        warning "Neither VALID_TOKEN environment variable nor .auth_token file is set"
+        warning "Neither VALID_TOKEN environment variable nor .auth_token_tgi file is set"
         echo "Please either:"
         echo "1. Generate token:    ./utils/generate_token.py"
         echo "2. Set environment:   export VALID_TOKEN=your_token"
