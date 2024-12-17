@@ -139,7 +139,7 @@ def initialize_session_state():
     if "messages" not in st.session_state:
         st.session_state.messages = []
     if "base_url" not in st.session_state:
-        st.session_state.base_url = "http://localhost:8000"
+        st.session_state.base_url = ""  # Empty by default
     if "api_token" not in st.session_state:
         st.session_state.api_token = ""
     if "chat_history" not in st.session_state:
@@ -150,6 +150,20 @@ def initialize_session_state():
         st.session_state.generated_response = None
     if "generation_time" not in st.session_state:
         st.session_state.generation_time = None
+    if "is_configured" not in st.session_state:
+        st.session_state.is_configured = False
+    if "client" not in st.session_state:
+        st.session_state.client = None
+
+async def test_connection(client: TGIClient) -> bool:
+    try:
+        # Test with a minimal prompt
+        test_messages = [{"role": "user", "content": "Hi"}]
+        await client.generate_response(test_messages, max_tokens=10)
+        return True
+    except Exception as e:
+        st.error(f"Connection test failed: {str(e)}")
+        return False
 
 def display_generation():
     st.title("🤖 AI Text Generation Interface")
@@ -232,8 +246,21 @@ def display_api_docs():
         Please place your API.md file in the project directory.
         """)
 
-def display_authentication():
-    st.title("🔑 Connection Settings")
+def display_configuration():
+    st.title("⚙️ Configuration Settings")
+    
+    # Current configuration display
+    st.markdown("### Current Configuration")
+    current_config = {
+        "Base URL": st.session_state.base_url,
+        "API Token": "•" * 12 if st.session_state.api_token else "Not set"
+    }
+    
+    for key, value in current_config.items():
+        st.info(f"**{key}:** {value}")
+    
+    st.markdown("---")
+    st.markdown("### Update Configuration")
     
     # URL input
     new_base_url = st.text_input(
@@ -242,36 +269,89 @@ def display_authentication():
         placeholder="http://localhost:8000/your-model/gpu0"
     )
     
-    # Token input
-    new_token = st.text_input(
-        "API Token:",
-        value=st.session_state.api_token,
-        type="password" if not st.session_state.show_token else "default",
-        placeholder="Enter your API token"
-    )
-    
+    # Token input with show/hide functionality
     col1, col2 = st.columns([4, 1])
+    with col1:
+        new_token = st.text_input(
+            "API Token:",
+            value=st.session_state.api_token,
+            type="password" if not st.session_state.show_token else "default",
+            placeholder="Enter your API token"
+        )
     with col2:
-        if st.button("👁️ Show/Hide"):
+        if st.button("👁️ Show/Hide", key="toggle_token"):
             st.session_state.show_token = not st.session_state.show_token
     
-    if st.button("Save Settings"):
-        st.session_state.base_url = new_base_url
-        st.session_state.api_token = new_token
-        st.session_state.client = TGIClient(new_base_url, new_token)
-        st.success("Settings saved successfully!")
+    if st.button("Test and Save Configuration", type="primary"):
+        if not new_base_url or not new_token:
+            st.error("Please provide both Base URL and API Token.")
+            return
+            
+        client = TGIClient(new_base_url, new_token)
+        
+        with st.spinner("Testing connection..."):
+            if asyncio.run(test_connection(client)):
+                st.session_state.base_url = new_base_url
+                st.session_state.api_token = new_token
+                st.session_state.client = client
+                st.success("✅ Connection tested and configuration saved successfully!")
+            else:
+                st.error("❌ Connection test failed. Please check your settings and try again.")
 
 def main():
     initialize_session_state()
     
-    tab1, tab2, tab3 = st.tabs(["🤖 Generation", "📚 API Docs", "🔑 Authentication"])
+    # If not configured, show only the configuration screen
+    if not st.session_state.is_configured:
+        st.title("🔑 Initial Setup")
+        st.markdown("Please configure your API connection to continue.")
+        
+        new_base_url = st.text_input(
+            "Base URL:",
+            value=st.session_state.base_url,
+            placeholder="http://localhost:8000/your-model/gpu0"
+        )
+        
+        new_token = st.text_input(
+            "API Token:",
+            value=st.session_state.api_token,
+            type="password" if not st.session_state.show_token else "default",
+            placeholder="Enter your API token"
+        )
+        
+        col1, col2 = st.columns([4, 1])
+        with col2:
+            if st.button("👁️ Show/Hide"):
+                st.session_state.show_token = not st.session_state.show_token
+        
+        if st.button("Connect", type="primary"):
+            if not new_base_url or not new_token:
+                st.error("Please provide both Base URL and API Token.")
+                return
+                
+            client = TGIClient(new_base_url, new_token)
+            
+            with st.spinner("Testing connection..."):
+                if asyncio.run(test_connection(client)):
+                    st.session_state.base_url = new_base_url
+                    st.session_state.api_token = new_token
+                    st.session_state.client = client
+                    st.session_state.is_configured = True
+                    st.success("✅ Connection successful! Redirecting to main interface...")
+                    time.sleep(1)  # Give user time to see the success message
+                    st.experimental_rerun()
+        
+        return
+    
+    # If configured, show the main UI with tabs
+    tab1, tab2, tab3 = st.tabs(["🤖 Generation", "📚 API Docs", "⚙️ Configuration"])
     
     with tab1:
         display_generation()
     with tab2:
         display_api_docs()
     with tab3:
-        display_authentication()
+        display_configuration()
 
 if __name__ == "__main__":
     main()
