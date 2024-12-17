@@ -4,7 +4,7 @@ import hashlib
 import logging
 import secrets
 import time
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 logging.basicConfig(
@@ -69,23 +69,20 @@ def get_secure_words():
 def generate_secure_token() -> str:
     """Generate a memorable yet secure token with additional entropy."""
     global last_generation_time
-
-    # Rate limiting
     current_time = time.time()
     if current_time - last_generation_time < GENERATION_COOLDOWN:
         raise ValueError("Token generation too frequent")
     last_generation_time = current_time
     adj1, adj2, noun = get_secure_words()
     readable_part = f"{adj1}-{adj2}-{noun}"
-    random_hex = secrets.token_hex(12)  # unrahul: could be more
-    timestamp = datetime.now(UTC).isoformat().encode()
+    random_hex = secrets.token_hex(12)  # could be increased
+    timestamp = datetime.now(timezone.utc).isoformat().encode()
     nonce = secrets.token_bytes(8)
     combined = timestamp + nonce + random_hex.encode()
     unique_hash = hashlib.blake2b(combined, digest_size=8).hexdigest()
     token = f"{readable_part}-{random_hex}-{unique_hash}"
     if not MIN_TOKEN_LENGTH <= len(token) <= MAX_TOKEN_LENGTH:
         raise ValueError("Generated token length outside acceptable range")
-
     return token
 
 
