@@ -338,6 +338,11 @@ def main():
         layout="wide",
         initial_sidebar_state="auto",
     )
+
+    # Initialize session state
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+    
     st.markdown(
         """
         <style>
@@ -544,16 +549,14 @@ def main():
             prompt = st.text_area(
                 "Message",
                 key="chat_input",
-                height=100,  # Increased height
+                height=100,
                 placeholder="Type your message here...",
                 label_visibility="collapsed"
             )
 
         # Display messages in the chat container
         with chat_container:
-            # Reverse the messages to show newest at the bottom
-            messages = st.session_state.get('messages', [])
-            for message in messages:
+            for message in st.session_state.messages:
                 with st.chat_message(message["role"]):
                     if "image" in message:
                         st.image(message["image"])
