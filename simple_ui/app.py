@@ -2,6 +2,7 @@ import streamlit as st
 import httpx
 import json
 from typing import List, Dict, Optional, AsyncGenerator
+import asyncio  # Import asyncio for async handling
 
 # Page config
 st.set_page_config(page_title="AI Chat Interface", page_icon="🤖", layout="wide")
@@ -25,18 +26,15 @@ class Conversation:
 
     def add_message(self, role: str, content: str):
         self.messages.append({"role": role, "content": content})
-        # Keep only the last N messages
-        self.messages = self.messages[-self.memory_size:]
+        self.messages = self.messages[-self.memory_size:]  # Keep only the last N messages
 
     def format_for_tgi(self) -> str:
-        # Format messages in a more chat-like format
         formatted_messages = []
         for msg in self.messages[-self.memory_size:]:
             if msg["role"] == "user":
                 formatted_messages.append(f"<|user|>\n{msg['content']}\n<|end|>")
             elif msg["role"] == "assistant":
                 formatted_messages.append(f"<|assistant|>\n{msg['content']}\n<|end|>")
-        
         return "\n".join(formatted_messages)
 
     def clear(self):
@@ -52,7 +50,6 @@ class TGIModelManager:
         self.system_message = system_message
     
     async def generate_stream(self, messages: str) -> AsyncGenerator[str, None]:
-        # Format the complete prompt with system message and chat markers
         prompt = f"<|system|>\n{self.system_message}\n<|end|>\n{messages}\n<|assistant|>\n"
         
         async with httpx.AsyncClient() as client:
@@ -66,7 +63,7 @@ class TGIModelManager:
                         "max_new_tokens": 500,
                         "temperature": 0.7,
                         "stream": True,
-                        "stop": ["<|end|>", "<|user|>", "<|system|>"]  # Add stop tokens
+                        "stop": ["<|end|>", "<|user|>", "<|system|>"]
                     }
                 },
                 timeout=60
@@ -152,45 +149,36 @@ for message in st.session_state.conversation.messages:
 
 # Chat input
 if prompt := st.chat_input("Type your message..."):
-    # Handle commands
     if prompt.startswith('/'):
         command = prompt[1:]
-        command_response = None
         if command == "help":
-            command_response = get_help()
+            st.write(get_help())
         elif command == "clear":
             st.session_state.conversation.clear()
             st.rerun()
         elif command == "about":
-            command_response = about_app()
-        
-        if command_response:
-            with st.chat_message("system", avatar="ℹ️"):
-                st.write(command_response)
+            st.write(about_app())
     else:
         # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
         st.session_state.conversation.add_message("user", prompt)
-        
+
         # Generate and display assistant response
         with st.chat_message("assistant", avatar=MODEL_CONFIG['avatar']):
-            message_placeholder = st.empty()
-            full_response = ""
-            
-            # Get the stream generator
-            stream_gen = st.session_state.model_manager.generate_stream(
-                st.session_state.conversation.format_for_tgi()
-            )
-            
-            # Use write_stream to handle the streaming
-            try:
-                import asyncio
-                async def process_stream():
-                    async for chunk in stream_gen:
-                        yield chunk
-                
-                response = st.write_stream(process_stream())
-                st.session_state.conversation.add_message("assistant", response)
-            except Exception as e:
-                st.error(f"Error generating response: {str(e)}")
+            response_placeholder = st.empty()
+            response = ""
+
+            # Process the stream
+            async def run_stream():
+                async for chunk in st.session_state.model_manager.generate_stream(
+                    st.session_state.conversation.format_for_tgi()
+                ):
+                    nonlocal response
+                    response += chunk
+                    response_placeholder.markdown(response)
+
+            # Run the async generator synchronously
+            asyncio.run(run_stream())
+
+        st.session_state.conversation.add_message("assistant", response)
