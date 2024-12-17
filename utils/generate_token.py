@@ -72,6 +72,7 @@ def generate_secure_token() -> str:
     current_time = time.time()
     if current_time - last_generation_time < GENERATION_COOLDOWN:
         raise ValueError("Token generation too frequent")
+    
     last_generation_time = current_time
     adj1, adj2, noun = get_secure_words()
     readable_part = f"{adj1}-{adj2}-{noun}"
@@ -81,16 +82,17 @@ def generate_secure_token() -> str:
     combined = timestamp + nonce + random_hex.encode()
     unique_hash = hashlib.blake2b(combined, digest_size=8).hexdigest()
     token = f"{readable_part}-{random_hex}-{unique_hash}"
+    
     if not MIN_TOKEN_LENGTH <= len(token) <= MAX_TOKEN_LENGTH:
         raise ValueError("Generated token length outside acceptable range")
     return token
 
 
 def save_to_auth_file(token: str) -> bool:
-    """Save token to .auth_token file."""
+    """Save token to .auth_token file in a shell-sourceable format."""
     auth_path = Path(".auth_token")
     try:
-        auth_path.write_text(token)
+        auth_path.write_text(f'export VALID_TOKEN="{token}"\n')
         return True
     except Exception as e:
         logger.error(f"Failed to write .auth_token file: {e}")
@@ -105,8 +107,7 @@ def set_env_token(token: str):
         content = [line for line in content if not line.startswith("VALID_TOKEN=")]
     else:
         content = []
-
-    content.append(f"VALID_TOKEN={token}")
+    content.append(f'VALID_TOKEN="{token}"')
     env_path.write_text("\n".join(content) + "\n")
     return True
 
@@ -138,7 +139,6 @@ def main():
     logger.info(f"Generated at: {datetime.utcnow().isoformat()}")
     logger.info(f"Token: {token}")
     logger.info("-" * 80)
-
     if set_env_token(token):
         logger.info("\nToken has been set in .env file!")
     if prompt_user_for_auth_file():
