@@ -8,131 +8,13 @@
 # ==============================================================================
 
 set -e
-echo "🎉🎉 Starting a demo UI for the chat service...🎉🎉"
+echo "🎉🎉 Starting the chat UI service...🎉🎉"
 
 # ------------------------------------------------------------------------------
-# Check Arguments and Model Config
+# Install Dependencies
 # ------------------------------------------------------------------------------
-if [ $# -ne 1 ]; then
-    echo "❌ Usage: $0 <model_name>"
-    echo "Available models:"
-    ls -1 models/
-    exit 1
-fi
-
-MODEL_NAME=$1
-MODEL_CONFIG="models/${MODEL_NAME}/config/model.env"
-
-if [ ! -f "$MODEL_CONFIG" ]; then
-    echo "❌ Error: Model configuration not found: $MODEL_CONFIG"
-    echo "Available models:"
-    ls -1 models/
-    exit 1
-fi
-
-# Load model configuration
-source "$MODEL_CONFIG"
-echo -e "\n📚 Model Configuration Summary"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🏷️  Model Name: $MODEL_NAME"
-echo "🤖 Model ID: $MODEL_ID"
-echo "📝 Model Type: ${MODEL_TYPE:-TGI_LLM}"
-echo "📊 Max Total Tokens: ${MAX_TOTAL_TOKENS:-1024}"
-echo "📏 Max Input Length: ${MAX_INPUT_LENGTH:-512}"
-echo "🔄 Max Concurrent Requests: ${MAX_CONCURRENT_REQUESTS:-1}"
-echo "📦 Max Batch Size: ${MAX_BATCH_SIZE:-1}"
-echo "🎯 TGI Version: ${TGI_VERSION}"
-echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-
-echo -e "\n🔍 Validating required environment variables..."
-REQUIRED_VARS=("MODEL_NAME" "MODEL_ID" "MODEL_TYPE" "MAX_TOTAL_TOKENS" "MAX_INPUT_LENGTH")
-MISSING_VARS=()
-
-for var in "${REQUIRED_VARS[@]}"; do
-    if [ -z "${!var}" ]; then
-        MISSING_VARS+=("$var")
-    fi
-done
-
-if [ ${#MISSING_VARS[@]} -ne 0 ]; then
-    echo "❌ Error: Missing required environment variables:"
-    printf '%s\n' "${MISSING_VARS[@]}"
-    exit 1
-fi
-echo "✅ All required environment variables are set"
-
-# ------------------------------------------------------------------------------
-# Check Auth Token
-# ------------------------------------------------------------------------------
-if [ ! -f ".auth_token_tgi" ] && [ -z "${VALID_TOKEN}" ]; then
-    echo "❌ Error: No authentication token found!"
-    echo "Please either:"
-    echo "  1. Deploy the service to create .auth_token_tgi"
-    echo "  2. Set the VALID_TOKEN environment variable"
-    exit 1
-fi
-
-[ -f ".auth_token_tgi" ] && source .auth_token_tgi
-
-export MODEL_NAME
-export MODEL_ID
-export MODEL_TYPE
-export MAX_TOTAL_TOKENS
-export MAX_INPUT_LENGTH
-
-# ------------------------------------------------------------------------------
-# Loading Animation Function
-# ------------------------------------------------------------------------------
-function show_loading_chat() {
-    local frames=("💬" "💬 ." "💬 .." "💬 ..." "💬 ....")
-    while true; do
-        for frame in "${frames[@]}"; do
-            echo -ne "\r$frame Waiting for model to load...   \r"
-            sleep 0.2
-        done
-    done
-}
-
-# ------------------------------------------------------------------------------
-# Wait for Model Service
-# ------------------------------------------------------------------------------
-echo "🔄 Starting model service initialization check..."
-max_attempts=30
-attempt=1
-
-# Start loading animation in background
-show_loading_chat &
-LOADING_PID=$!
-trap 'kill $LOADING_PID 2>/dev/null; exit' INT TERM EXIT
-
-while [ $attempt -le $max_attempts ]; do
-    echo -ne "\rAttempt $attempt/$max_attempts: Testing model endpoint..."
-    
-    # Test the generate endpoint with a minimal request
-    test_response=$(curl -s -X POST \
-        -H "Authorization: Bearer $VALID_TOKEN" \
-        -H "Content-Type: application/json" \
-        -d '{"inputs":"Hi","parameters":{"max_new_tokens":1}}' \
-        "http://localhost:8000/${MODEL_NAME}/gpu0/generate")
-
-    if echo "$test_response" | grep -q "generated_text"; then
-        kill $LOADING_PID 2>/dev/null
-        echo -e "\n✨ Model service is ready!"
-        echo "📝 Test response: $test_response"
-        break
-    else
-        if [ $attempt -eq $max_attempts ]; then
-            kill $LOADING_PID 2>/dev/null
-            echo -e "\n❌ Timeout waiting for model service to be ready"
-            echo "Please ensure the model service is properly started"
-            echo "Test Response: $test_response"
-            exit 1
-        fi
-        sleep 2
-        attempt=$((attempt + 1))
-    fi
-done
-trap - INT TERM EXIT
+echo "📦 Installing UI dependencies..."
+pip install streamlit requests pillow >/dev/null 2>&1
 
 # ------------------------------------------------------------------------------
 # Cleanup existing processes
@@ -140,12 +22,6 @@ trap - INT TERM EXIT
 echo "🧹 Cleaning up existing UI processes..."
 pkill -f "streamlit run" || true
 sleep 2
-
-# ------------------------------------------------------------------------------
-# Install Dependencies
-# ------------------------------------------------------------------------------
-echo "📦 Installing UI dependencies..."
-pip install streamlit requests pillow >/dev/null 2>&1
 
 # ------------------------------------------------------------------------------
 # Create chat history directory
@@ -171,6 +47,7 @@ read -r create_tunnel
 
 if [[ $create_tunnel =~ ^[Yy]$ ]]; then
     echo -e "\n⚠️  NOTICE: For evaluation purposes only"
+    echo "🔄 When the tunnel starts, click on the provided *.trycloudflare.com URL to access the UI"
     echo "🔄 Starting Cloudflare tunnel..."
 
     # Check if cloudflared is installed
