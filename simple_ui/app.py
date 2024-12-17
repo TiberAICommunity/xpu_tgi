@@ -1,5 +1,6 @@
 import streamlit as st
-import requests
+import httpx
+import asyncio
 import os
 from typing import List, Dict
 import json
@@ -15,26 +16,46 @@ st.set_page_config(page_title="AI Text Generation", page_icon="🤖", layout="wi
 
 st.markdown("""
     <style>
-    .stTextArea textarea { font-size: 16px; }
-    .output-container {
-        background-color: #f0f2f6;
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap');
+    
+    .main {
+        font-family: 'Inter', sans-serif;
+    }
+    
+    .stTextArea textarea {
+        font-family: 'Inter', sans-serif;
+        font-size: 16px;
         border-radius: 10px;
-        padding: 20px;
-        margin: 10px 0;
+        border: 2px solid #e0e0e0;
     }
-    .header-container { margin-bottom: 20px; }
-    .error-message {
-        color: #ff4b4b;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 10px 0;
+    
+    .output-container {
+        background-color: #f8f9fa;
+        border-radius: 12px;
+        padding: 24px;
+        margin: 16px 0;
+        border: 1px solid #e9ecef;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
-    .success-message {
-        color: #00cc00;
-        padding: 10px;
-        border-radius: 5px;
-        margin: 10px 0;
+    
+    .chat-message {
+        padding: 16px;
+        margin: 8px 0;
+        border-radius: 8px;
+        line-height: 1.5;
     }
+    
+    .user-message {
+        background-color: #e3f2fd;
+        margin-left: 20%;
+    }
+    
+    .assistant-message {
+        background-color: #f5f5f5;
+        margin-right: 20%;
+    }
+    
+    /* Add more custom styles... */
     </style>
 """, unsafe_allow_html=True)
 
@@ -46,7 +67,7 @@ class TGIClient:
             "Content-Type": "application/json"
         }
     
-    def generate_response(self, messages: List[Dict[str, str]], max_tokens: int = 100) -> str:
+    async def generate_response(self, messages: List[Dict[str, str]], max_tokens: int = 100) -> str:
         try:
             prompt = "<|system|>\nYou are a helpful AI assistant.\n<|end|>\n"
             for msg in messages[-4:]:
@@ -65,42 +86,43 @@ class TGIClient:
             full_response = ""
             start_time = time.time()
             
-            with requests.post(
-                f"{self.base_url}/generate", 
-                headers=self.headers, 
-                json=payload, 
-                stream=True,
-                timeout=30
-            ) as response:
-                response.raise_for_status()
-                
-                for line in response.iter_lines():
-                    if line:
-                        try:
-                            json_response = json.loads(line)
-                            if isinstance(json_response, list) and json_response:
-                                chunk = json_response[0].get("generated_text", "")
-                                chunk = (chunk.replace(prompt, "")
-                                       .replace("<|assistant|>", "")
-                                       .replace("<|end|>", "")
-                                       .replace("<|system|>", "")
-                                       .replace("<|user|>", ""))
-                                
-                                new_token = chunk[len(full_response):].strip()
-                                if new_token:
-                                    full_response += new_token + " "
-                                    message_placeholder.markdown(full_response + "▌")
+            async with httpx.AsyncClient() as client:
+                async with client.stream(
+                    'POST',
+                    f"{self.base_url}/generate",
+                    headers=self.headers,
+                    json=payload,
+                    timeout=60
+                ) as response:
+                    response.raise_for_status()
+                    
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                json_response = json.loads(line)
+                                if isinstance(json_response, list) and json_response:
+                                    chunk = json_response[0].get("generated_text", "")
+                                    chunk = (chunk.replace(prompt, "")
+                                           .replace("<|assistant|>", "")
+                                           .replace("<|end|>", "")
+                                           .replace("<|system|>", "")
+                                           .replace("<|user|>", ""))
                                     
-                                if time.time() - start_time > 60:
-                                    raise TimeoutError("Response generation timed out")
-                                    
-                        except json.JSONDecodeError:
-                            continue
+                                    new_token = chunk[len(full_response):].strip()
+                                    if new_token:
+                                        full_response += new_token + " "
+                                        message_placeholder.markdown(full_response + "▌")
+                                        
+                                    if time.time() - start_time > 60:
+                                        raise TimeoutError("Response generation timed out")
+                                        
+                            except json.JSONDecodeError:
+                                continue
                 
                 message_placeholder.markdown(full_response)
                 return full_response
                 
-        except requests.exceptions.RequestException as e:
+        except httpx.RequestError as e:
             error_msg = f"Network error: {str(e)}"
             st.error(error_msg)
             return error_msg
@@ -116,8 +138,12 @@ class TGIClient:
 def initialize_session_state():
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    if "client" not in st.session_state:
-        st.session_state.client = TGIClient(BASE_URL, VALID_TOKEN)
+    if "base_url" not in st.session_state:
+        st.session_state.base_url = "http://localhost:8000"
+    if "api_token" not in st.session_state:
+        st.session_state.api_token = ""
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
     if "show_token" not in st.session_state:
         st.session_state.show_token = False
     if "generated_response" not in st.session_state:
@@ -127,6 +153,19 @@ def initialize_session_state():
 
 def display_generation():
     st.title("🤖 AI Text Generation Interface")
+    
+    # Display chat history
+    for message in st.session_state.chat_history:
+        role = message["role"]
+        content = message["content"]
+        
+        with st.container():
+            st.markdown(
+                f"""<div class="chat-message {'user-message' if role == 'user' else 'assistant-message'}">
+                    {content}
+                </div>""",
+                unsafe_allow_html=True
+            )
     
     # Input section
     prompt = st.text_area("Enter your prompt:", height=150, placeholder="Type your message here...")
@@ -143,9 +182,24 @@ def display_generation():
             return
             
         try:
-            messages = [{"role": "user", "content": prompt.strip()}]
-            st.session_state.generated_response = st.session_state.client.generate_response(messages, max_tokens)
+            message = {"role": "user", "content": prompt.strip()}
+            st.session_state.chat_history.append(message)
+            
+            # Run the async function using asyncio
+            response = asyncio.run(
+                st.session_state.client.generate_response(
+                    st.session_state.chat_history, 
+                    max_tokens
+                )
+            )
+            
+            st.session_state.chat_history.append({
+                "role": "assistant",
+                "content": response
+            })
+            
             st.session_state.generation_time = datetime.now()
+            
         except Exception as e:
             st.error(f"Generation error: {str(e)}")
             return
@@ -179,31 +233,33 @@ def display_api_docs():
         """)
 
 def display_authentication():
-    st.title("🔑 Authentication Settings")
+    st.title("🔑 Connection Settings")
     
-    if VALID_TOKEN:
-        st.write("Your API token is configured.")
-        
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            if st.session_state.show_token:
-                st.text_input("API Token", value=VALID_TOKEN, disabled=True)
-            else:
-                st.text_input("API Token", value="*" * 20, disabled=True)
-        
-        with col2:
-            if st.button("👁️ Show/Hide"):
-                st.session_state.show_token = not st.session_state.show_token
-        
-        st.info("Keep your API token secure and never share it with others.")
-    else:
-        st.error("No valid API token found in environment variables.")
-        st.markdown("""
-        Please set your API token in the environment variables:
-        ```bash
-        export VALID_TOKEN=your_token_here
-        ```
-        """)
+    # URL input
+    new_base_url = st.text_input(
+        "Base URL:",
+        value=st.session_state.base_url,
+        placeholder="http://localhost:8000/your-model/gpu0"
+    )
+    
+    # Token input
+    new_token = st.text_input(
+        "API Token:",
+        value=st.session_state.api_token,
+        type="password" if not st.session_state.show_token else "default",
+        placeholder="Enter your API token"
+    )
+    
+    col1, col2 = st.columns([4, 1])
+    with col2:
+        if st.button("👁️ Show/Hide"):
+            st.session_state.show_token = not st.session_state.show_token
+    
+    if st.button("Save Settings"):
+        st.session_state.base_url = new_base_url
+        st.session_state.api_token = new_token
+        st.session_state.client = TGIClient(new_base_url, new_token)
+        st.success("Settings saved successfully!")
 
 def main():
     initialize_session_state()
