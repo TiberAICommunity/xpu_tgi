@@ -64,15 +64,15 @@ echo "✅ All required environment variables are set"
 # ------------------------------------------------------------------------------
 # Check Auth Token
 # ------------------------------------------------------------------------------
-if [ ! -f ".auth_token.env" ] && [ -z "${VALID_TOKEN}" ]; then
+if [ ! -f ".auth_token_tgi" ] && [ -z "${VALID_TOKEN}" ]; then
     echo "❌ Error: No authentication token found!"
     echo "Please either:"
-    echo "  1. Run the TGI service first to create .auth_token.env"
+    echo "  1. Deploy the service to create .auth_token_tgi"
     echo "  2. Set the VALID_TOKEN environment variable"
     exit 1
 fi
 
-[ -f ".auth_token.env" ] && source .auth_token.env
+[ -f ".auth_token_tgi" ] && source .auth_token_tgi
 
 export MODEL_NAME
 export MODEL_ID
