@@ -121,6 +121,8 @@ st.markdown(
         margin: 1rem 0;
         color: #1565C0;
         transition: all 0.3s ease;
+        max-width: 800px;
+        display: inline-block;
     }
     .sample-prompt-box:hover {
         background-color: #BBDEFB;
@@ -131,11 +133,6 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-SAMPLE_PROMPT = """Write a creative story about a robot learning to paint. The story should:
-- Be around 200 words
-- Have a clear beginning, middle, and end
-- Include descriptive details about the robot's journey
-- End with a meaningful conclusion"""
 
 tab1, tab2 = st.tabs(["🤖 Text Generation", "📚 API Documentation"])
 
@@ -161,41 +158,29 @@ with tab1:
             st.success("✅ Connected to TGI server")
             max_tokens = st.slider("Max New Tokens", 10, 1000, 200)
             temperature = st.slider("Temperature", 0.0, 2.0, 0.7)
-            col1, col2 = st.columns([1, 4])
-            with col1:
-                if st.button("Use Sample Prompt"):
-                    st.session_state.prompt = SAMPLE_PROMPT
-                    st.rerun()
-            with col2:
-                if st.button("Clear"):
-                    st.session_state.prompt = ""
-                    st.rerun()
-            
             prompt = st.text_area(
                 "Enter your prompt:",
                 height=100,
                 value=st.session_state.get("prompt", ""),
             )
-            st.markdown('<div class="sample-prompt-box">', unsafe_allow_html=True)
-            st.markdown("**Try this sample prompt:**")
-            st.markdown(SAMPLE_PROMPT)
-            st.markdown("</div>", unsafe_allow_html=True)
 
             col1, col2, col3 = st.columns([1, 1, 2])
             with col2:
                 if st.button("Generate 🚀", use_container_width=True) and prompt:
-                    progress_text = st.empty()
+                    progress_placeholder = st.empty()
                     loading_emojis = ["🤔", "💭", "⚡", "🔮", "✨"]
-                    loading_thread_active = True
+                    loading_thread_active = threading.Event()
+                    loading_thread_active.set()
 
                     def loading_animation():
                         i = 0
-                        while loading_thread_active:
-                            progress_text.markdown(
+                        while loading_thread_active.is_set():
+                            progress_placeholder.markdown(
                                 f"### Generating {loading_emojis[i % len(loading_emojis)]}"
                             )
                             time.sleep(0.3)
                             i += 1
+
                     loading_thread = threading.Thread(target=loading_animation)
                     loading_thread.start()
                     try:
@@ -220,15 +205,16 @@ with tab1:
                         st.markdown("### Your Prompt:")
                         st.markdown(f"```\n{prompt}\n```")
                         st.markdown("### Generated Response:")
-                        generated_text = result[0]["generated_text"].replace('```', '\\```')
+                        generated_text = result[0]["generated_text"][len(prompt):].strip()
+                        generated_text = generated_text.replace('```', '\\```')
                         st.markdown(generated_text)
                         st.markdown("</div>", unsafe_allow_html=True)
                     except (requests.exceptions.RequestException, ValueError) as e:
                         st.error(f"Generation Error: {str(e)}")
                     finally:
-                        loading_thread_active = False
+                        loading_thread_active.clear()
                         loading_thread.join()
-                        progress_text.empty()
+                        progress_placeholder.empty()
         except requests.exceptions.RequestException as e:
             st.error(f"Connection Error: {str(e)}")
     else:
