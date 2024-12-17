@@ -44,28 +44,31 @@ class TGIClient:
             ) as response:
                 response.raise_for_status()
                 
-                # Create a placeholder for streaming output
                 message_placeholder = st.empty()
                 full_response = ""
                 
-                # Stream the response
                 for line in response.iter_lines():
                     if line:
                         json_response = json.loads(line)
                         if isinstance(json_response, list) and len(json_response) > 0:
                             chunk = json_response[0].get("generated_text", "")
-                            # Clean up the chunk by removing any message markers and the original prompt
+                            # More aggressive cleaning of the response
                             chunk = (chunk.replace(prompt, "")
                                    .replace("<|assistant|>", "")
                                    .replace("<|end|>", "")
                                    .replace("<|system|>", "")
-                                   .strip())
+                                   .replace("<|user|>", "")
+                                   .replace("<|bot|>", ""))
+                            
+                            # Remove any text that starts with "<|user|>" and everything after it
+                            if "<|user|>" in chunk:
+                                chunk = chunk.split("<|user|>")[0]
+                            
+                            chunk = chunk.strip()
                             if chunk:  # Only update if there's new content
                                 full_response = chunk
-                                # Update the placeholder with the accumulated response
                                 message_placeholder.markdown(full_response + "▌")
                 
-                # Final update without the cursor
                 message_placeholder.markdown(full_response)
                 return full_response
                 
