@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 
-import sys
 import glob
 import os
+import sys
 
 
 def get_render_devices():

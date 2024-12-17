@@ -88,8 +88,8 @@ async def validate_token(request: Request, authorization: Optional[str] = Header
                 content={
                     "detail": "No authorization provided",
                     "message": "Please provide a Bearer token in the Authorization header",
-                    "example": "Authorization: Bearer your_token_here"
-                }
+                    "example": "Authorization: Bearer your_token_here",
+                },
             )
 
         if not authorization.startswith("Bearer "):
@@ -100,10 +100,10 @@ async def validate_token(request: Request, authorization: Optional[str] = Header
                 content={
                     "detail": "Invalid authorization format",
                     "message": "Authorization header must start with 'Bearer '",
-                    "example": "Authorization: Bearer your_token_here"
-                }
+                    "example": "Authorization: Bearer your_token_here",
+                },
             )
-        
+
         token = authorization.split(" ")[1]
         if token != VALID_TOKEN:
             logger.warning(f"Invalid token attempt from IP: {client_ip}")
@@ -112,8 +112,8 @@ async def validate_token(request: Request, authorization: Optional[str] = Header
                 status_code=401,
                 content={
                     "detail": "Invalid token",
-                    "message": "The provided token is not valid"
-                }
+                    "message": "The provided token is not valid",
+                },
             )
 
         reset_failed_attempts(client_ip)
@@ -121,19 +121,19 @@ async def validate_token(request: Request, authorization: Optional[str] = Header
             content={
                 "status": "valid",
                 "message": "Token is valid",
-                "client_ip": client_ip
+                "client_ip": client_ip,
             },
             headers={"X-Auth-Status": "valid", "X-Real-IP": client_ip},
         )
-        
+
     except Exception as e:
         logger.error(f"Error processing request from {client_ip}: {str(e)}")
         return JSONResponse(
             status_code=500,
             content={
                 "detail": "Internal server error",
-                "message": str(e) if app.debug else "An unexpected error occurred"
-            }
+                "message": str(e) if app.debug else "An unexpected error occurred",
+            },
         )
 
 

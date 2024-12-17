@@ -80,6 +80,38 @@ Process images and generate text responses.
 
 ---
 
+### 3. **Streaming Generation**
+Generate a stream of tokens.
+
+**Endpoint**: `POST /generate_stream`
+
+**Headers**:
+- `Content-Type`: `application/json`
+- `Authorization`: `Bearer <your-valid-token>`
+
+**Request Body**: Same as /generate endpoint
+**Response**: Server-Sent Events stream of tokens
+
+### 4. **Model Information**
+Get information about the loaded model.
+
+**Endpoint**: `GET /info`
+
+**Headers**:
+- `Authorization`: `Bearer <your-valid-token>`
+
+**Response**:
+```json
+{
+    "model_name": "string",
+    "model_type": "string",
+    "max_sequence_length": "integer",
+    "capabilities": ["string"]
+}
+```
+
+---
+
 ## Input Formatting
 
 ### 1. **Text-Only Input**

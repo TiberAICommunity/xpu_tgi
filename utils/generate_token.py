@@ -53,7 +53,7 @@ def main():
     if set_env_token(token):
         logger.info("\nToken has been set in .env file!")
         logger.info("You can now start any model with this token")
-    
+
     # Print token for capture by shell scripts
     print(token)
 
