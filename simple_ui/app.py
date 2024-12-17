@@ -36,33 +36,17 @@ class APIClient:
     def __init__(self, config):
         self.config = config
         self.session = requests.Session()
+        self.base_url = "http://localhost:8000/hermes-2-pro-tgi/gpu0"
         
-        # Get model configuration from environment
-        self.model_name = os.getenv("MODEL_NAME", "unknown-model")
-        self.model_type = os.getenv("MODEL_TYPE", "TGI_LLM")  # Default to LLM if not specified
-        
-        # Get model limits from environment
-        self.max_context_length = int(os.getenv("MAX_TOTAL_TOKENS", "1024"))
-        self.max_input_length = int(os.getenv("MAX_INPUT_LENGTH", "512"))
-        self.gpu_id = 0 #  default
-
-        # Add logging setup
+        # Setup logging
         self.logger = logging.getLogger('APIClient')
         self.logger.setLevel(logging.DEBUG)
-        
-        # Add file handler
         fh = logging.FileHandler('api_client.log')
-        fh.setLevel(logging.DEBUG)
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        fh.setFormatter(formatter)
+        fh.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         self.logger.addHandler(fh)
 
-    def log_to_streamlit(self, message):
-        """Log messages to Streamlit UI."""
-        st.text(message)
-
-    def format_llm_prompt(self, prompt: str, messages: list = None) -> str:
-        """Format prompt for LLM models (e.g., Phi-3)"""
+    def format_prompt(self, prompt: str, messages: list = None) -> str:
+        """Format prompt with chat history"""
         system_msg = "<|system|>\nYou are a helpful assistant.<|end|>\n"
         if messages:
             chat_history = ""
@@ -72,153 +56,18 @@ class APIClient:
             return f"{system_msg}{chat_history}<|user|>\n{prompt}<|end|>\n<|assistant|>"
         return f"{system_msg}<|user|>\n{prompt}<|end|>\n<|assistant|>"
 
-    def format_vlm_prompt(self, prompt: str, image_data: str = None, messages: list = None) -> str:
-        """Format prompt for VLM models (e.g., LLaVA)"""
-        system_msg = "<|im_start|>system\nAnswer the questions.<|im_end|>"
-        if messages:
-            chat_history = ""
-            for msg in messages:
-                role = "user" if msg["role"] == "user" else "assistant"
-                content = msg["content"]
-                if "image" in msg and role == "user":
-                    content = f"![Image](data:image/jpeg;base64,{msg['image']})\n{content}"
-                chat_history += f"<|im_start|>{role}\n{content}<|im_end|>\n"
-            
-            if image_data:
-                prompt = f"![Image](data:image/jpeg;base64,{image_data})\n{prompt}"
-            return f"{system_msg}\n{chat_history}<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-        
-        if image_data:
-            prompt = f"![Image](data:image/jpeg;base64,{image_data})\n{prompt}"
-        return f"{system_msg}\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
-
-    def preprocess_image(self, image: Image.Image) -> str:
-        """Preprocess image for VLM models"""
-        max_size = 200  # Reduce maximum size for smaller Base64 string
-        ratio = min(max_size / image.size[0], max_size / image.size[1])
-        new_size = tuple([int(x * ratio) for x in image.size])
-        image = image.resize(new_size, Image.Resampling.LANCZOS)
-        image = image.convert('RGB')
-
-        # Convert to base64
-        buffer = BytesIO()
-        image.save(buffer, format="JPEG", quality=50)
-        return base64.b64encode(buffer.getvalue()).decode('utf-8')
-
-    def make_request(
-        self,
-        prompt: str,
-        parameters: dict,
-        image_data: Optional[str] = None,
-        messages: list = None,
-    ) -> requests.Response:
-        """Make secure API requests with retry and validation."""
-        # Create a dedicated area for logs in Streamlit
-        log_container = st.empty()
-        
-        def update_logs(message):
-            """Update logs in the Streamlit container"""
-            if 'logs' not in st.session_state:
-                st.session_state.logs = []
-            st.session_state.logs.append(message)
-            log_container.text('\n'.join(st.session_state.logs))
-            self.logger.info(message)
-
-        update_logs("Starting new API request")
-        
-        if not self.config.rate_limiter.can_make_request():
-            update_logs("Rate limit exceeded")
-            raise ValueError("Rate limit exceeded")
-
+    def make_stream_request(self, prompt: str, parameters: dict, messages: list = None):
+        """Make streaming API request"""
         try:
-            # Hardcoded URL
-            url = "http://localhost:8000/hermes-2-pro-tgi/gpu0/generate"
-            update_logs(f"Request URL: {url}")
+            url = f"{self.base_url}/generate"
             
-            # Format input based on model type
-            if self.model_type == "TGI_VLM":
-                formatted_input = self.format_vlm_prompt(prompt, image_data, messages)
-            else:
-                formatted_input = self.format_llm_prompt(prompt, messages)
-            
-            update_logs(f"Formatted input: {formatted_input}")
-
             payload = {
-                "inputs": formatted_input,
-                "parameters": parameters
+                "inputs": self.format_prompt(prompt, messages),
+                "parameters": {**parameters, "stream": True}
             }
             
-            headers = {
-                "Authorization": f"Bearer {self.config.token}",
-                "Content-Type": "application/json",
-            }
-            
-            # Log request details
-            update_logs(f"Making POST request to {url}")
-            update_logs(f"Headers: {{'Authorization': 'Bearer ***', 'Content-Type': {headers['Content-Type']}}}")
-            update_logs(f"Payload: {json.dumps(payload, indent=2)}")
-            
-            response = self.session.post(
-                url=url,
-                headers=headers,
-                json=payload,
-                timeout=180,
-                verify=True,
-            )
-
-            update_logs(f"Response status code: {response.status_code}")
-            update_logs(f"Response headers: {dict(response.headers)}")
-            update_logs(f"Response content: {response.text[:500]}...")  # Log first 500 chars
-
-            response.raise_for_status()
-            return response
-
-        except requests.exceptions.RequestException as e:
-            update_logs(f"Request failed: {str(e)}")
-            if hasattr(e, "response"):
-                update_logs(f"Response status code: {e.response.status_code}")
-                update_logs(f"Response content: {e.response.text}")
-                
-                if e.response.status_code == 401:
-                    raise ValueError("Invalid token")
-                elif e.response.status_code == 429:
-                    raise ValueError("Rate limit exceeded")
-            raise ValueError(f"API request failed: {str(e)}")
-
-    def make_stream_request(
-        self,
-        prompt: str,
-        parameters: dict,
-        image_data: Optional[str] = None,
-        messages: list = None,
-    ):
-        """Make streaming API request."""
-        try:
-            url = f"{self.config.base_url}/{self.model_name}/gpu{self.gpu_id}/generate"
-            
-            # Format input based on model type
-            if self.model_type == "TGI_VLM":
-                formatted_input = self.format_vlm_prompt(prompt, image_data, messages)
-            else:
-                formatted_input = self.format_llm_prompt(prompt, messages)
-
-            payload = {
-                "inputs": formatted_input,
-                "parameters": {
-                    **parameters,
-                    "stream": True,
-                    "details": True
-                }
-            }
-            
-            # Enhanced debug output
-            print("\n=== Request Details ===")
-            print(f"URL: {url}")
-            print(f"Token: {self.config.token[:5]}...")  # First 5 chars only
-            print(f"Model Type: {self.model_type}")
-            print(f"Headers: {{'Authorization': 'Bearer ...', 'Content-Type': 'application/json'}}")
-            print("\nPayload:")
-            print(json.dumps(payload, indent=2))
+            self.logger.info(f"Making request to {url}")
+            self.logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
             
             response = self.session.post(
                 url,
@@ -228,19 +77,14 @@ class APIClient:
                 },
                 json=payload,
                 stream=True,
-                timeout=180,
-                verify=True,
+                timeout=30,
             )
-            
-            # Debug response
-            print("\n=== Response Details ===")
-            print(f"Status Code: {response.status_code}")
-            print(f"Response Headers: {dict(response.headers)}")
             
             response.raise_for_status()
             return response
+            
         except Exception as e:
-            print(f"Stream request error: {str(e)}")  # Debug output
+            self.logger.error(f"Request failed: {str(e)}")
             raise
 
 
@@ -294,12 +138,6 @@ def get_default_params() -> dict:
     }
 
 
-def is_vlm_model(config) -> bool:
-    """Determine if the model is VLM based on environment variable."""
-    model_type = os.getenv("TGI_MODEL_TYPE", "TGI_LLM")
-    return model_type == "TGI_VLM"
-
-
 def sanitize_input(text: str) -> str:
     """Sanitize user input to prevent injection attacks."""
     allowed_tags = ["<image>", "</image>", "<|im_start|>", "<|im_end|>"]
@@ -336,314 +174,132 @@ def main():
         page_title="TGI Chat Interface",
         page_icon="🤖",
         layout="wide",
-        initial_sidebar_state="auto",
     )
 
-    # Initialize session state
+    # Initialize session state for messages
     if "messages" not in st.session_state:
         st.session_state.messages = []
-    
-    st.markdown(
-        """
-        <style>
-        /* Custom theme */
-        :root {
-            --font-main: 'Poppins', sans-serif;
-            --font-code: 'JetBrains Mono', monospace;
-            --primary-color: #FF1493;
-            --secondary-color: #FF69B4;
-            --background-color: #ffffff;
-        }
 
-        /* Import Google Fonts */
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap');
-        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono&display=swap');
+    st.title("TGI Chat Demo")
 
-        /* Global styles */
-        .stApp {
-            background-color: var(--background-color);
-            font-family: var(--font-main);
-        }
-
-        /* Headers */
-        h1, h2, h3, h4, h5, h6 {
-            font-family: var(--font-main);
-            color: var(--secondary-color);
-            font-weight: 600;
-        }
-
-        /* Chat message styling */
-        .stChatMessage {
-            background-color: #f8f9fa;
-            border-radius: 15px;
-            padding: 10px;
-            margin: 5px 0;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-        }
-
-        .stChatMessage.user {
-            background-color: #e3f2fd;
-        }
-
-        .stChatMessage.assistant {
-            background-color: #f3e5f5;
-        }
-
-        /* Input fields */
-        .stTextInput > div > div > input,
-        .stTextArea > div > div > textarea {
-            border-radius: 10px;
-            border: 2px solid var(--primary-color) !important;
-        }
-
-        .stTextInput > div > div > input:focus,
-        .stTextArea > div > div > textarea:focus {
-            box-shadow: 0 0 0 2px var(--secondary-color) !important;
-        }
-
-        /* Buttons */
-        .stButton > button {
-            font-family: var(--font-main);
-            background-color: var(--primary-color) !important;
-            color: white !important;
-            border-radius: 8px !important;
-            padding: 0.5rem 1rem !important;
-            font-weight: 500 !important;
-            transition: all 0.3s ease !important;
-        }
-
-        .stButton > button:hover {
-            background-color: var(--secondary-color) !important;
-            box-shadow: 0 4px 8px rgba(255,20,147,0.3) !important;
-            transform: translateY(-2px) !important;
-        }
-
-        /* Sidebar */
-        .css-1d391kg {
-            background-color: #f8f9fa;
-        }
-
-        /* File uploader */
-        .stFileUploader {
-            border: 2px dashed var(--primary-color);
-            border-radius: 10px;
-            padding: 10px;
-        }
-
-        /* Tabs styling */
-        .stTabs [data-baseweb="tab-list"] {
-            gap: 2px;
-        }
-
-        .stTabs [data-baseweb="tab"] {
-            height: 50px;
-            background-color: #ffffff;
-            border-radius: 5px 5px 0 0;
-            gap: 1px;
-            padding: 10px 20px;
-        }
-
-        .stTabs [aria-selected="true"] {
-            background-color: var(--primary-color) !important;
-            color: white !important;
-        }
-
-        /* Info box styling */
-        .info-box {
-            background-color: #e7f3ef;
-            border-left: 4px solid #2e7d32;
-            padding: 1rem;
-            margin: 1rem 0;
-            border-radius: 4px;
-        }
-
-        /* Radio buttons */
-        .stRadio > div {
-            display: flex;
-            gap: 20px;
-        }
-
-        .stRadio [data-baseweb="radio"] {
-            margin-right: 20px;
-        }
-
-        /* Spinner */
-        .stSpinner {
-            text-align: center;
-            color: var(--primary-color);
-        }
-
-        /* Error messages */
-        .stAlert {
-            border-radius: 8px;
-            border: none;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-
-        /* Chat container */
-        .stChatFloatingInputContainer {
-            position: fixed;
-            bottom: 0;
-            width: 100%;
-            padding: 1rem;
-            background: white;
-            box-shadow: 0 -4px 6px rgba(0,0,0,0.05);
-        }
-        
-        /* Chat messages */
-        .stChatMessage {
-            background-color: #f8f9fa;
-            border-radius: 15px;
-            padding: 15px;
-            margin: 10px 0;
-            max-width: 80%;
-        }
-        
-        .stChatMessage.user {
-            background-color: #e3f2fd;
-            margin-left: auto;
-        }
-        
-        .stChatMessage.assistant {
-            background-color: #f3e5f5;
-            margin-right: auto;
-        }
-        
-        /* Chat input */
-        .stChatInputContainer {
-            padding: 10px;
-            border-radius: 10px;
-            border: 1px solid #e0e0e0;
-            background: white;
-        }
-        
-        .stTextInput > div > div > input {
-            border-radius: 20px;
-            padding: 10px 20px;
-            border: 2px solid var(--primary-color);
-            background: white;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown(
-        '<h1 class="title">TGI Chat Demo on Intel XPUs</h1>',
-        unsafe_allow_html=True,
-    )
-
+    # Create tabs
     tab1, tab2, tab3 = st.tabs(["💬 Chat", "📚 API Documentation", "🔑 Authentication"])
 
     with tab1:
-        # Create a container for chat messages with scrolling
-        chat_container = st.container()
+        # Chat interface
+        col1, col2 = st.columns([5, 1])
         
-        # Create a container for the input at the bottom
-        input_container = st.container()
+        # Display chat history
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                if "image" in message:
+                    st.image(message["image"])
+                st.write(message["content"])
 
-        # Use columns to center the input field
-        col1, col2, col3 = input_container.columns([1, 2, 1])
-        
-        with col2:
-            prompt = st.text_area(
-                "Message",
-                key="chat_input",
-                height=100,
-                placeholder="Type your message here...",
-                label_visibility="collapsed"
-            )
-
-        # Display messages in the chat container
-        with chat_container:
-            for message in st.session_state.messages:
-                with st.chat_message(message["role"]):
-                    if "image" in message:
-                        st.image(message["image"])
-                    st.write(message["content"])
-
-        # Handle the input
-        if prompt:
-            if not config.token:
-                st.error("Please configure your token first!")
-                return
+        # Chat input area
+        with st.container():
+            # Create two columns - one for text input, one for image upload
+            input_col, upload_col, send_col = st.columns([4, 1, 1])
             
-            # Add user message
-            st.session_state.messages.append({"role": "user", "content": prompt})
+            with input_col:
+                user_input = st.text_input("Type your message here...", key="user_input")
             
-            # Clear the input
-            st.session_state.chat_input = ""
+            with upload_col:
+                uploaded_file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg'], key="uploader")
             
-            # Rerun to update the UI
-            st.rerun()
+            with send_col:
+                send_button = st.button("Send")
 
-        # Generate assistant response
-        if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
-            with chat_container:
+            if send_button and (user_input or uploaded_file):
+                if not config.token:
+                    st.error("Please configure your token first!")
+                    st.stop()
+
+                # Process uploaded image if any
+                image_data = None
+                if uploaded_file:
+                    image = Image.open(uploaded_file)
+                    if validate_image(image):
+                        buffered = BytesIO()
+                        image.save(buffered, format="JPEG")
+                        image_data = base64.b64encode(buffered.getvalue()).decode()
+                        # Add image to message
+                        st.chat_message("user").image(uploaded_file)
+                
+                # Add user message to chat
+                message_content = user_input if user_input else "Image uploaded"
+                st.chat_message("user").write(message_content)
+                
+                new_message = {"role": "user", "content": message_content}
+                if image_data:
+                    new_message["image"] = image_data
+                st.session_state.messages.append(new_message)
+
+                # Generate assistant response
                 with st.chat_message("assistant"):
                     message_placeholder = st.empty()
-                    full_response = ""
                     try:
                         response = config.api_client.make_stream_request(
-                            st.session_state.messages[-1]["content"],
-                            params,
-                            image_data,
+                            user_input,
+                            get_default_params(),
                             messages=st.session_state.messages[:-1]
                         )
                         
+                        full_response = ""
                         for line in response.iter_lines():
                             if line:
                                 try:
-                                    raw_line = line.decode('utf-8')
-                                    data = json.loads(raw_line)
-                                    
+                                    data = json.loads(line.decode('utf-8'))
                                     if "generated_text" in data:
-                                        token = data["generated_text"]
-                                        full_response = token
+                                        full_response = data["generated_text"]
                                     elif "token" in data and "text" in data["token"]:
-                                        token = data["token"]["text"]
-                                        full_response += token
-                                    else:
-                                        continue
-                                    
+                                        full_response += data["token"]["text"]
                                     message_placeholder.markdown(full_response + "▌")
                                 except json.JSONDecodeError:
                                     continue
-                                except Exception:
-                                    continue
                         
-                        if full_response:
-                            message_placeholder.markdown(full_response)
-                            st.session_state.messages.append(
-                                {"role": "assistant", "content": full_response}
-                            )
-                            # Rerun to update the UI
-                            st.rerun()
-                        else:
-                            message_placeholder.error("No response generated")
-                        
+                        message_placeholder.markdown(full_response)
+                        st.session_state.messages.append({"role": "assistant", "content": full_response})
+                    
                     except Exception as e:
-                        st.error(f"Error generating response: {str(e)}")
-                        st.info("Response error. Details: " + str(e))
+                        st.error(f"Error: {str(e)}")
+
+                # Clear inputs after sending
+                st.session_state.user_input = ""
+                st.session_state.uploader = None
+
+        # Sidebar for parameters
+        with st.sidebar:
+            if st.button("Clear Chat"):
+                st.session_state.messages = []
+            
+            st.header("Generation Parameters")
+            params = get_default_params()
+            params["temperature"] = st.slider("Temperature", 0.0, 1.0, 0.7)
+            params["max_new_tokens"] = st.slider("Max New Tokens", 1, 500, 150)
+            params["top_p"] = st.slider("Top P", 0.0, 1.0, 0.95)
+            params["top_k"] = st.slider("Top K", 1, 100, 50)
+            params["repetition_penalty"] = st.slider("Repetition Penalty", 1.0, 2.0, 1.1)
 
     with tab2:
-        st.markdown("### API Documentation")
-        with open("API.md", "r") as f:
-            st.markdown(f.read())
+        st.header("API Documentation")
+        try:
+            with open("API.md", "r") as f:
+                st.markdown(f.read())
+        except FileNotFoundError:
+            st.warning("API documentation file (API.md) not found.")
 
     with tab3:
-        st.markdown("### 🔐 Authentication")
-        new_token = st.text_input(
-            "Enter API Token", value=config.token, type="password"
-        )
+        st.header("Authentication")
+        new_token = st.text_input("Enter API Token", type="password", value=config.token or "")
         if st.button("Save Token"):
             config.token = new_token
             st.success("Token saved successfully!")
 
-    # Add a section for debug logs
-    with st.expander("Debug Logs", expanded=True):
+    # Debug logs at the bottom
+    with st.expander("Debug Logs", expanded=False):
         if 'logs' in st.session_state:
-            st.text('\n'.join(st.session_state.logs))
+            st.code('\n'.join(st.session_state.logs))
 
 
 if __name__ == "__main__":
