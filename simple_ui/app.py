@@ -186,31 +186,28 @@ def main():
     tab1, tab2, tab3 = st.tabs(["💬 Chat", "📚 API Documentation", "🔑 Authentication"])
 
     with tab1:
-        # Chat interface
-        col1, col2 = st.columns([5, 1])
-        
-        # Display chat history
+        # Display chat history in a cleaner way
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
                 if "image" in message:
                     st.image(message["image"])
-                st.write(message["content"])
+                st.markdown(message["content"])
 
-        # Chat input area
+        # Chat input area with a cleaner layout
         with st.container():
-            # Create two columns - one for text input, one for image upload
-            input_col, upload_col, send_col = st.columns([4, 1, 1])
+            col1, col2, col3 = st.columns([3, 1, 1])
             
-            with input_col:
-                user_input = st.text_input("Type your message here...", key="user_input")
+            with col1:
+                prompt = st.chat_input("Type your message here...")
             
-            with upload_col:
-                uploaded_file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg'], key="uploader")
-            
-            with send_col:
-                send_button = st.button("Send")
+            with col2:
+                uploaded_file = st.file_uploader(
+                    "🖼️",
+                    type=['png', 'jpg', 'jpeg'],
+                    label_visibility="collapsed"
+                )
 
-            if send_button and (user_input or uploaded_file):
+            if prompt or uploaded_file:
                 if not config.token:
                     st.error("Please configure your token first!")
                     st.stop()
@@ -223,12 +220,11 @@ def main():
                         buffered = BytesIO()
                         image.save(buffered, format="JPEG")
                         image_data = base64.b64encode(buffered.getvalue()).decode()
-                        # Add image to message
                         st.chat_message("user").image(uploaded_file)
-                
+
                 # Add user message to chat
-                message_content = user_input if user_input else "Image uploaded"
-                st.chat_message("user").write(message_content)
+                message_content = prompt if prompt else "Image uploaded"
+                st.chat_message("user").markdown(message_content)
                 
                 new_message = {"role": "user", "content": message_content}
                 if image_data:
@@ -240,7 +236,7 @@ def main():
                     message_placeholder = st.empty()
                     try:
                         response = config.api_client.make_stream_request(
-                            user_input,
+                            prompt,
                             get_default_params(),
                             messages=st.session_state.messages[:-1]
                         )
@@ -264,16 +260,13 @@ def main():
                     except Exception as e:
                         st.error(f"Error: {str(e)}")
 
-                # Clear inputs after sending
-                st.session_state.user_input = ""
-                st.session_state.uploader = None
-
-        # Sidebar for parameters
+        # Sidebar with clear chat button and parameters
         with st.sidebar:
-            if st.button("Clear Chat"):
+            if st.button("🗑️ Clear Chat"):
                 st.session_state.messages = []
+                st.rerun()
             
-            st.header("Generation Parameters")
+            st.header("⚙️ Generation Parameters")
             params = get_default_params()
             params["temperature"] = st.slider("Temperature", 0.0, 1.0, 0.7)
             params["max_new_tokens"] = st.slider("Max New Tokens", 1, 500, 150)
