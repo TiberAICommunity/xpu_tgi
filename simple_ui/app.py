@@ -67,73 +67,47 @@ class TGIClient:
             "Content-Type": "application/json"
         }
     
-    async def generate_response(self, messages: List[Dict[str, str]], max_tokens: int = 100) -> str:
-        try:
-            prompt = "<|system|>\nYou are a helpful AI assistant.\n<|end|>\n"
-            for msg in messages[-4:]:
-                prompt += f"<|{msg['role']}|>\n{msg['content']}\n<|end|>\n"
-            prompt += "<|assistant|>\n"
-            
-            payload = {
-                "inputs": prompt,
-                "parameters": {
-                    "max_new_tokens": max_tokens,
-                    "stream": True
-                }
+    async def generate_response(self, messages: List[Dict[str, str]], max_tokens: int = 100):
+        prompt = "<|system|>\nYou are a helpful AI assistant.\n<|end|>\n"
+        for msg in messages[-4:]:
+            prompt += f"<|{msg['role']}|>\n{msg['content']}\n<|end|>\n"
+        prompt += "<|assistant|>\n"
+        
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_new_tokens": max_tokens,
+                "stream": True
             }
-            
-            message_placeholder = st.empty()
-            full_response = ""
-            start_time = time.time()
-            
-            async with httpx.AsyncClient() as client:
-                async with client.stream(
-                    'POST',
-                    f"{self.base_url}/generate",
-                    headers=self.headers,
-                    json=payload,
-                    timeout=60
-                ) as response:
-                    response.raise_for_status()
-                    
-                    async for line in response.aiter_lines():
-                        if line:
-                            try:
-                                json_response = json.loads(line)
-                                if isinstance(json_response, list) and json_response:
-                                    chunk = json_response[0].get("generated_text", "")
-                                    chunk = (chunk.replace(prompt, "")
-                                           .replace("<|assistant|>", "")
-                                           .replace("<|end|>", "")
-                                           .replace("<|system|>", "")
-                                           .replace("<|user|>", ""))
-                                    
-                                    new_token = chunk[len(full_response):].strip()
-                                    if new_token:
-                                        full_response += new_token + " "
-                                        message_placeholder.markdown(full_response + "▌")
-                                        
-                                    if time.time() - start_time > 60:
-                                        raise TimeoutError("Response generation timed out")
-                                        
-                            except json.JSONDecodeError:
-                                continue
+        }
+        
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                'POST',
+                f"{self.base_url}/generate",
+                headers=self.headers,
+                json=payload,
+                timeout=60
+            ) as response:
+                response.raise_for_status()
+                full_response = ""
                 
-                message_placeholder.markdown(full_response)
-                return full_response
-                
-        except httpx.RequestError as e:
-            error_msg = f"Network error: {str(e)}"
-            st.error(error_msg)
-            return error_msg
-        except TimeoutError as e:
-            error_msg = f"Timeout: {str(e)}"
-            st.error(error_msg)
-            return error_msg
-        except Exception as e:
-            error_msg = f"Error: {str(e)}"
-            st.error(error_msg)
-            return error_msg
+                async for chunk in response.aiter_bytes():
+                    if chunk:
+                        try:
+                            chunk_str = chunk.decode()
+                            for line in chunk_str.split('\n'):
+                                if line.strip():
+                                    json_response = json.loads(line)
+                                    if isinstance(json_response, list) and json_response:
+                                        text = json_response[0].get("generated_text", "")
+                                        new_content = text[len(prompt):].strip()
+                                        if new_content != full_response:
+                                            delta = new_content[len(full_response):]
+                                            full_response = new_content
+                                            yield delta
+                        except json.JSONDecodeError:
+                            continue
 
 def initialize_session_state():
     if "messages" not in st.session_state:
@@ -161,6 +135,12 @@ async def test_connection(client: TGIClient) -> bool:
         test_messages = [{"role": "user", "content": "Hi"}]
         await client.generate_response(test_messages, max_tokens=10)
         return True
+    except httpx.HTTPStatusError as e:
+        st.error(f"HTTP Error: {e.response.status_code} - {e.response.url}")
+        return False
+    except httpx.RequestError as e:
+        st.error(f"Connection Error: {str(e)}")
+        return False
     except Exception as e:
         st.error(f"Connection test failed: {str(e)}")
         return False
@@ -168,70 +148,32 @@ async def test_connection(client: TGIClient) -> bool:
 def display_generation():
     st.title("🤖 AI Text Generation Interface")
     
-    # Display chat history
+    # Display chat history using Streamlit's chat interface
     for message in st.session_state.chat_history:
-        role = message["role"]
-        content = message["content"]
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
+    
+    # Chat input
+    if prompt := st.chat_input("Enter your message..."):
+        # Display user message
+        with st.chat_message("user"):
+            st.markdown(prompt)
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
         
-        with st.container():
-            st.markdown(
-                f"""<div class="chat-message {'user-message' if role == 'user' else 'assistant-message'}">
-                    {content}
-                </div>""",
-                unsafe_allow_html=True
-            )
-    
-    # Input section
-    prompt = st.text_area("Enter your prompt:", height=150, placeholder="Type your message here...")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        max_tokens = st.slider("Max tokens:", 10, 500, 100, key="max_tokens")
-    with col2:
-        temperature = st.slider("Temperature:", 0.1, 1.0, 0.7, key="temperature")
-    
-    if st.button("Generate", type="primary"):
-        if not prompt or prompt.isspace():
-            st.warning("Please enter a valid prompt.")
-            return
-            
-        try:
-            message = {"role": "user", "content": prompt.strip()}
-            st.session_state.chat_history.append(message)
-            
-            # Run the async function using asyncio
-            response = asyncio.run(
-                st.session_state.client.generate_response(
-                    st.session_state.chat_history, 
-                    max_tokens
+        # Display assistant response with streaming
+        with st.chat_message("assistant"):
+            try:
+                stream = st.session_state.client.generate_response(
+                    st.session_state.chat_history,
+                    max_tokens=100
                 )
-            )
-            
-            st.session_state.chat_history.append({
-                "role": "assistant",
-                "content": response
-            })
-            
-            st.session_state.generation_time = datetime.now()
-            
-        except Exception as e:
-            st.error(f"Generation error: {str(e)}")
-            return
-    
-    # Display persistent output
-    if hasattr(st.session_state, 'generated_response') and st.session_state.generated_response:
-        st.markdown("### Generated Response:")
-        st.markdown(f"*Generated at: {st.session_state.generation_time.strftime('%Y-%m-%d %H:%M:%S')}*")
-        st.markdown("---")
-        st.markdown(st.session_state.generated_response)
-        st.markdown("---")
-        st.markdown(f"""
-        **Generation Details:**
-        - Tokens: {st.session_state.max_tokens}
-        - Temperature: {st.session_state.temperature}
-        - Time: {st.session_state.generation_time.strftime('%Y-%m-%d %H:%M:%S')}
-        """)
-
+                response = st.write_stream(stream)
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": response
+                })
+            except Exception as e:
+                st.error(f"Generation error: {str(e)}")
 
 def display_api_docs():
     st.title("📚 API Documentation")
