@@ -42,7 +42,7 @@ class APIClient:
         # Get model limits from environment
         self.max_context_length = int(os.getenv("MAX_TOTAL_TOKENS", "1024"))
         self.max_input_length = int(os.getenv("MAX_INPUT_LENGTH", "512"))
-        self.gpu_id = 0
+        self.gpu_id = 0 #  default
 
     def format_llm_prompt(self, prompt: str, messages: list = None) -> str:
         """Format prompt for LLM models (e.g., Phi-3)"""
@@ -166,8 +166,14 @@ class APIClient:
                 }
             }
             
-            print(f"Making request to: {url}")  # Debug output
-            print(f"Payload: {json.dumps(payload, indent=2)}")  # Debug output
+            # Enhanced debug output
+            print("\n=== Request Details ===")
+            print(f"URL: {url}")
+            print(f"Token: {self.config.token[:5]}...")  # First 5 chars only
+            print(f"Model Type: {self.model_type}")
+            print(f"Headers: {{'Authorization': 'Bearer ...', 'Content-Type': 'application/json'}}")
+            print("\nPayload:")
+            print(json.dumps(payload, indent=2))
             
             response = self.session.post(
                 url,
@@ -180,6 +186,12 @@ class APIClient:
                 timeout=180,
                 verify=True,
             )
+            
+            # Debug response
+            print("\n=== Response Details ===")
+            print(f"Status Code: {response.status_code}")
+            print(f"Response Headers: {dict(response.headers)}")
+            
             response.raise_for_status()
             return response
         except Exception as e:
@@ -235,20 +247,6 @@ def get_default_params() -> dict:
         "top_k": 50,
         "repetition_penalty": 1.1,
     }
-
-
-def get_model_info(config) -> dict:
-    """Get model information from the API."""
-    try:
-        response = requests.get(
-            f"{config.base_url}/info",
-            headers={"Authorization": f"Bearer {config.token}"},
-            timeout=10,
-        )
-        response.raise_for_status()
-        return response.json()
-    except Exception:
-        return {}
 
 
 def is_vlm_model(config) -> bool:
@@ -523,21 +521,36 @@ def main():
                         messages=st.session_state.messages[:-1]
                     )
                     
+                    print("\n=== Processing Response Stream ===")
                     for line in response.iter_lines():
                         if line:
                             try:
-                                data = json.loads(line.decode('utf-8'))
-                                # Check for generated_text in the response
+                                raw_line = line.decode('utf-8')
+                                print(f"Raw line: {raw_line}")
+                                
+                                data = json.loads(raw_line)
+                                print(f"Parsed data: {data}")
+                                
+                                # Handle different response formats
                                 if "generated_text" in data:
                                     token = data["generated_text"]
-                                    full_response = token  # Replace instead of append for complete responses
-                                    message_placeholder.markdown(full_response)
-                                # Also check for token-by-token streaming
+                                    print(f"Found complete text: {token}")
+                                    full_response = token
                                 elif "token" in data and "text" in data["token"]:
                                     token = data["token"]["text"]
+                                    print(f"Found token: {token}")
                                     full_response += token
-                                    message_placeholder.markdown(full_response + "▌")
-                            except json.JSONDecodeError:
+                                else:
+                                    print(f"Unknown format: {data}")
+                                    continue
+                                
+                                message_placeholder.markdown(full_response + "▌")
+                            except json.JSONDecodeError as e:
+                                print(f"JSON decode error: {e}")
+                                print(f"Problem line: {line}")
+                                continue
+                            except Exception as e:
+                                print(f"Other error: {str(e)}")
                                 continue
                     
                     # Final update without cursor
