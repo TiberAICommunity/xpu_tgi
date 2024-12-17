@@ -223,7 +223,7 @@ start_model_service() {
 
 wait_for_model_service() {
     info "Waiting for model service to be healthy"
-    local max_attempts=300 # 5 minutes (300 seconds)
+    local max_attempts=600 # 10 minutes (600 seconds)
     local attempt=1
     local last_log=""
     while [ $attempt -le $max_attempts ]; do
