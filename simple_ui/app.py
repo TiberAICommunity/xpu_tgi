@@ -57,6 +57,10 @@ class APIClient:
         fh.setFormatter(formatter)
         self.logger.addHandler(fh)
 
+    def log_to_streamlit(self, message):
+        """Log messages to Streamlit UI."""
+        st.text(message)
+
     def format_llm_prompt(self, prompt: str, messages: list = None) -> str:
         """Format prompt for LLM models (e.g., Phi-3)"""
         system_msg = "<|system|>\nYou are a helpful assistant.<|end|>\n"
@@ -110,15 +114,18 @@ class APIClient:
     ) -> requests.Response:
         """Make secure API requests with retry and validation."""
         self.logger.info("Starting new API request")
+        self.log_to_streamlit("Starting new API request")
         
         if not self.config.rate_limiter.can_make_request():
             self.logger.warning("Rate limit exceeded")
+            self.log_to_streamlit("Rate limit exceeded")
             raise ValueError("Rate limit exceeded")
 
         try:
-            # Update URL format to match example
+            # Construct the URL dynamically
             url = f"{self.config.base_url}/{self.model_name}/generate"
             self.logger.debug(f"Request URL: {url}")
+            self.log_to_streamlit(f"Request URL: {url}")
             
             # Format input based on model type
             if self.model_type == "TGI_VLM":
@@ -127,6 +134,7 @@ class APIClient:
                 formatted_input = self.format_llm_prompt(prompt, messages)
             
             self.logger.debug(f"Formatted input: {formatted_input}")
+            self.log_to_streamlit(f"Formatted input: {formatted_input}")
 
             payload = {
                 "inputs": formatted_input,
@@ -140,8 +148,11 @@ class APIClient:
             
             # Log request details (excluding sensitive data)
             self.logger.info(f"Making POST request to {url}")
+            self.log_to_streamlit(f"Making POST request to {url}")
             self.logger.debug(f"Headers (sanitized): {{'Authorization': 'Bearer ***', 'Content-Type': {headers['Content-Type']}}}")
+            self.log_to_streamlit(f"Headers: {{'Authorization': 'Bearer ***', 'Content-Type': {headers['Content-Type']}}}")
             self.logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
+            self.log_to_streamlit(f"Payload: {json.dumps(payload, indent=2)}")
             
             response = self.session.post(
                 url=url,
@@ -152,17 +163,23 @@ class APIClient:
             )
 
             self.logger.info(f"Response status code: {response.status_code}")
+            self.log_to_streamlit(f"Response status code: {response.status_code}")
             self.logger.debug(f"Response headers: {dict(response.headers)}")
+            self.log_to_streamlit(f"Response headers: {dict(response.headers)}")
             self.logger.debug(f"Response content: {response.text[:500]}...")  # Log first 500 chars
+            self.log_to_streamlit(f"Response content: {response.text[:500]}...")
 
             response.raise_for_status()
             return response
 
         except requests.exceptions.RequestException as e:
             self.logger.error(f"Request failed: {str(e)}")
+            self.log_to_streamlit(f"Request failed: {str(e)}")
             if hasattr(e, "response"):
                 self.logger.error(f"Response status code: {e.response.status_code}")
+                self.log_to_streamlit(f"Response status code: {e.response.status_code}")
                 self.logger.error(f"Response content: {e.response.text}")
+                self.log_to_streamlit(f"Response content: {e.response.text}")
                 
                 if e.response.status_code == 401:
                     raise ValueError("Invalid token")
@@ -462,44 +479,46 @@ def main():
 
         /* Chat container */
         .stChatFloatingInputContainer {
-            bottom: 20px !important;
-            padding: 1rem !important;
-            background: white !important;
-            box-shadow: 0 -4px 6px rgba(0,0,0,0.05) !important;
+            position: fixed;
+            bottom: 0;
+            width: 100%;
+            padding: 1rem;
+            background: white;
+            box-shadow: 0 -4px 6px rgba(0,0,0,0.05);
         }
         
         /* Chat messages */
         .stChatMessage {
-            background-color: #f8f9fa !important;
-            border-radius: 15px !important;
-            padding: 15px !important;
-            margin: 10px 0 !important;
-            max-width: 80% !important;
+            background-color: #f8f9fa;
+            border-radius: 15px;
+            padding: 15px;
+            margin: 10px 0;
+            max-width: 80%;
         }
         
         .stChatMessage.user {
-            background-color: #e3f2fd !important;
-            margin-left: auto !important;
+            background-color: #e3f2fd;
+            margin-left: auto;
         }
         
         .stChatMessage.assistant {
-            background-color: #f3e5f5 !important;
-            margin-right: auto !important;
+            background-color: #f3e5f5;
+            margin-right: auto;
         }
         
         /* Chat input */
         .stChatInputContainer {
-            padding: 10px !important;
-            border-radius: 10px !important;
-            border: 1px solid #e0e0e0 !important;
-            background: white !important;
+            padding: 10px;
+            border-radius: 10px;
+            border: 1px solid #e0e0e0;
+            background: white;
         }
         
         .stTextInput > div > div > input {
-            border-radius: 20px !important;
-            padding: 10px 20px !important;
-            border: 2px solid var(--primary-color) !important;
-            background: white !important;
+            border-radius: 20px;
+            padding: 10px 20px;
+            border: 2px solid var(--primary-color);
+            background: white;
         }
         </style>
         """,
@@ -593,42 +612,29 @@ def main():
                         messages=st.session_state.messages[:-1]
                     )
                     
-                    print("\n=== Processing Response Stream ===")
                     for line in response.iter_lines():
                         if line:
                             try:
                                 raw_line = line.decode('utf-8')
-                                print(f"Raw line: {raw_line}")
-                                
                                 data = json.loads(raw_line)
-                                print(f"Parsed data: {data}")
                                 
-                                # Handle different response formats
                                 if "generated_text" in data:
                                     token = data["generated_text"]
-                                    print(f"Found complete text: {token}")
                                     full_response = token
                                 elif "token" in data and "text" in data["token"]:
                                     token = data["token"]["text"]
-                                    print(f"Found token: {token}")
                                     full_response += token
                                 else:
-                                    print(f"Unknown format: {data}")
                                     continue
                                 
                                 message_placeholder.markdown(full_response + "▌")
-                            except json.JSONDecodeError as e:
-                                print(f"JSON decode error: {e}")
-                                print(f"Problem line: {line}")
+                            except json.JSONDecodeError:
                                 continue
-                            except Exception as e:
-                                print(f"Other error: {str(e)}")
+                            except Exception:
                                 continue
                     
-                    # Final update without cursor
                     if full_response:
                         message_placeholder.markdown(full_response)
-                        # Add assistant response to history
                         st.session_state.messages.append(
                             {"role": "assistant", "content": full_response}
                         )
