@@ -3,12 +3,10 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
-
 st.set_page_config(
-    page_title="LLM Text generation Demo on Intel XPUs",
-    page_icon="🐙",
-    layout="wide"
+    page_title="LLM Text generation Demo on Intel XPUs", page_icon="🐙", layout="wide"
 )
+
 st.markdown(
     """
 <style>
@@ -25,12 +23,6 @@ st.markdown(
         font-size: 2.5rem !important;
         font-weight: 700 !important;
         margin-bottom: 2rem !important;
-    }
-    
-    h3 {
-        color: #333;
-        font-size: 1.5rem !important;
-        margin-top: 1.5rem !important;
     }
     
     /* Input fields */
@@ -62,39 +54,17 @@ st.markdown(
         background-color: #FF1493 !important; 
     }
     
-    /* Sample prompts */
-    .sample-prompt {
-        background-color: #f8f9fa;
-        padding: 1rem;
-        border-radius: 8px;
-        margin-bottom: 1rem;
-    }
-    
     /* Generated text container */
     .generated-text {
         background-color: #f8f9fa;
         padding: 2rem;
         border-radius: 10px;
-        margin: 2rem auto;
-        width: 90vw;
+        margin: 1rem auto;
+        width: 100%;
         max-width: 1200px;
         min-width: 300px;
         line-height: 1.6;
-    }
-    
-    .generated-text pre {
-        background-color: #e9ecef;
-        padding: 1rem;
-        border-radius: 8px;
-        margin: 1rem 0;
-        white-space: pre-wrap;
-    }
-    
-    .generated-text h3 {
-        color: #1E88E5;
-        margin-top: 1.5rem !important;
-        margin-bottom: 1rem !important;
-        font-size: 1.2rem !important;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
     
     /* API docs */
@@ -122,27 +92,10 @@ st.markdown(
     .stTabs [data-baseweb="tab-list"] {
         gap: 2rem;
     }
+    
     .stTabs [data-baseweb="tab"] {
         font-size: 1.2rem;
         font-weight: 600;
-    }
-    
-    /* Sample prompt info box */
-    .sample-prompt-box {
-        background-color: #E3F2FD;
-        border-left: 5px solid #1E88E5;
-        padding: 1rem;
-        border-radius: 4px;
-        font-size: 0.9rem;
-        margin: 1rem 0;
-        color: #1565C0;
-        transition: all 0.3s ease;
-        max-width: 800px;
-        display: inline-block;
-    }
-    .sample-prompt-box:hover {
-        background-color: #BBDEFB;
-        transform: translateX(5px);
     }
     
     /* Center the generate button */
@@ -151,6 +104,12 @@ st.markdown(
         margin: 2rem 0;
         display: flex;
         justify-content: center;
+    }
+    
+    /* Spinner alignment */
+    .stSpinner {
+        text-align: center;
+        margin: 1rem auto;
     }
 </style>
 """,
@@ -182,9 +141,7 @@ with tab1:
     with col2:
         connect_clicked = st.button("Connect 🔗", use_container_width=True)
 
-    if connect_clicked or (
-        base_url and api_token
-    ): 
+    if connect_clicked or (base_url and api_token):
         try:
             headers = {
                 "Authorization": f"Bearer {api_token}",
@@ -208,9 +165,9 @@ with tab1:
             col1, col2, col3 = st.columns([1, 4, 1])
             with col2:
                 if st.button("Generate 🚀", use_container_width=True) and prompt:
-                    with st.spinner("Generating response..."):
+                    session = create_retry_session()
+                    with st.spinner("🤖 Generating response..."):
                         try:
-                            session = create_retry_session()
                             response = session.post(
                                 f"{base_url}/generate",
                                 headers=headers,
@@ -233,11 +190,10 @@ with tab1:
                                 raise ValueError(
                                     "Unexpected response format from the server"
                                 )
-                            st.markdown("---")
+                            full_text = result[0]["generated_text"]
                             st.markdown(
                                 '<div class="generated-text">', unsafe_allow_html=True
                             )
-                            full_text = result[0]["generated_text"]
                             st.markdown(full_text)
                             st.markdown("</div>", unsafe_allow_html=True)
                         except (requests.exceptions.RequestException, ValueError) as e:
