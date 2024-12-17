@@ -106,6 +106,8 @@ LOADING_PID=$!
 trap 'kill $LOADING_PID 2>/dev/null; exit' INT TERM EXIT
 
 while [ $attempt -le $max_attempts ]; do
+    echo -ne "\rAttempt $attempt/$max_attempts: Testing model endpoint..."
+    
     # Test the generate endpoint with a minimal request
     test_response=$(curl -s -X POST \
         -H "Authorization: Bearer $VALID_TOKEN" \
@@ -116,6 +118,7 @@ while [ $attempt -le $max_attempts ]; do
     if echo "$test_response" | grep -q "generated_text"; then
         kill $LOADING_PID 2>/dev/null
         echo -e "\n✨ Model service is ready!"
+        echo "📝 Test response: $test_response"
         break
     else
         if [ $attempt -eq $max_attempts ]; then
