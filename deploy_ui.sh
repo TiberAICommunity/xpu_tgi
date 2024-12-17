@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ==============================================================================
-# Deploy Chat UI
+# Deploy Text Generation demo UI
 # ==============================================================================
 # This script deploys the Streamlit UI for the Chat service
 # and optionally creates a public demo endpoint using Cloudflare Tunnel.
