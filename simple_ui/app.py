@@ -29,11 +29,15 @@ class Conversation:
         self.messages = self.messages[-self.memory_size:]
 
     def format_for_tgi(self) -> str:
-        formatted_messages = "\n".join([
-            f"{msg['role'].capitalize()}: {msg['content']}" 
-            for msg in self.messages[-self.memory_size:]
-        ])
-        return formatted_messages
+        # Format messages in a more chat-like format
+        formatted_messages = []
+        for msg in self.messages[-self.memory_size:]:
+            if msg["role"] == "user":
+                formatted_messages.append(f"<|user|>\n{msg['content']}\n<|end|>")
+            elif msg["role"] == "assistant":
+                formatted_messages.append(f"<|assistant|>\n{msg['content']}\n<|end|>")
+        
+        return "\n".join(formatted_messages)
 
     def clear(self):
         self.messages = []
@@ -48,7 +52,8 @@ class TGIModelManager:
         self.system_message = system_message
     
     async def generate_stream(self, messages: str) -> AsyncGenerator[str, None]:
-        prompt = f"{self.system_message}\n\n{messages}"
+        # Format the complete prompt with system message and chat markers
+        prompt = f"<|system|>\n{self.system_message}\n<|end|>\n{messages}\n<|assistant|>\n"
         
         async with httpx.AsyncClient() as client:
             async with client.stream(
@@ -59,7 +64,9 @@ class TGIModelManager:
                     "inputs": prompt,
                     "parameters": {
                         "max_new_tokens": 500,
-                        "stream": True
+                        "temperature": 0.7,
+                        "stream": True,
+                        "stop": ["<|end|>", "<|user|>", "<|system|>"]  # Add stop tokens
                     }
                 },
                 timeout=60
@@ -76,8 +83,9 @@ class TGIModelManager:
                                 new_text = text[len(prompt):].strip()
                                 if new_text != last_text:
                                     delta = new_text[len(last_text):]
-                                    last_text = new_text
-                                    yield delta
+                                    if delta:
+                                        last_text = new_text
+                                        yield delta
                         except json.JSONDecodeError:
                             continue
 
@@ -167,8 +175,22 @@ if prompt := st.chat_input("Type your message..."):
         
         # Generate and display assistant response
         with st.chat_message("assistant", avatar=MODEL_CONFIG['avatar']):
-            stream = st.session_state.model_manager.generate_stream(
+            message_placeholder = st.empty()
+            full_response = ""
+            
+            # Get the stream generator
+            stream_gen = st.session_state.model_manager.generate_stream(
                 st.session_state.conversation.format_for_tgi()
             )
-            response = st.write_stream(stream)
-            st.session_state.conversation.add_message("assistant", response)
+            
+            # Use write_stream to handle the streaming
+            try:
+                import asyncio
+                async def process_stream():
+                    async for chunk in stream_gen:
+                        yield chunk
+                
+                response = st.write_stream(process_stream())
+                st.session_state.conversation.add_message("assistant", response)
+            except Exception as e:
+                st.error(f"Error generating response: {str(e)}")
