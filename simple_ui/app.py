@@ -113,19 +113,27 @@ class APIClient:
         messages: list = None,
     ) -> requests.Response:
         """Make secure API requests with retry and validation."""
-        self.logger.info("Starting new API request")
-        self.log_to_streamlit("Starting new API request")
+        # Create a dedicated area for logs in Streamlit
+        log_container = st.empty()
+        
+        def update_logs(message):
+            """Update logs in the Streamlit container"""
+            if 'logs' not in st.session_state:
+                st.session_state.logs = []
+            st.session_state.logs.append(message)
+            log_container.text('\n'.join(st.session_state.logs))
+            self.logger.info(message)
+
+        update_logs("Starting new API request")
         
         if not self.config.rate_limiter.can_make_request():
-            self.logger.warning("Rate limit exceeded")
-            self.log_to_streamlit("Rate limit exceeded")
+            update_logs("Rate limit exceeded")
             raise ValueError("Rate limit exceeded")
 
         try:
-            # Construct the URL dynamically
-            url = f"{self.config.base_url}/{self.model_name}/generate"
-            self.logger.debug(f"Request URL: {url}")
-            self.log_to_streamlit(f"Request URL: {url}")
+            # Hardcoded URL
+            url = "http://localhost:8000/hermes-2-pro-tgi/gpu0/generate"
+            update_logs(f"Request URL: {url}")
             
             # Format input based on model type
             if self.model_type == "TGI_VLM":
@@ -133,8 +141,7 @@ class APIClient:
             else:
                 formatted_input = self.format_llm_prompt(prompt, messages)
             
-            self.logger.debug(f"Formatted input: {formatted_input}")
-            self.log_to_streamlit(f"Formatted input: {formatted_input}")
+            update_logs(f"Formatted input: {formatted_input}")
 
             payload = {
                 "inputs": formatted_input,
@@ -146,13 +153,10 @@ class APIClient:
                 "Content-Type": "application/json",
             }
             
-            # Log request details (excluding sensitive data)
-            self.logger.info(f"Making POST request to {url}")
-            self.log_to_streamlit(f"Making POST request to {url}")
-            self.logger.debug(f"Headers (sanitized): {{'Authorization': 'Bearer ***', 'Content-Type': {headers['Content-Type']}}}")
-            self.log_to_streamlit(f"Headers: {{'Authorization': 'Bearer ***', 'Content-Type': {headers['Content-Type']}}}")
-            self.logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
-            self.log_to_streamlit(f"Payload: {json.dumps(payload, indent=2)}")
+            # Log request details
+            update_logs(f"Making POST request to {url}")
+            update_logs(f"Headers: {{'Authorization': 'Bearer ***', 'Content-Type': {headers['Content-Type']}}}")
+            update_logs(f"Payload: {json.dumps(payload, indent=2)}")
             
             response = self.session.post(
                 url=url,
@@ -162,24 +166,18 @@ class APIClient:
                 verify=True,
             )
 
-            self.logger.info(f"Response status code: {response.status_code}")
-            self.log_to_streamlit(f"Response status code: {response.status_code}")
-            self.logger.debug(f"Response headers: {dict(response.headers)}")
-            self.log_to_streamlit(f"Response headers: {dict(response.headers)}")
-            self.logger.debug(f"Response content: {response.text[:500]}...")  # Log first 500 chars
-            self.log_to_streamlit(f"Response content: {response.text[:500]}...")
+            update_logs(f"Response status code: {response.status_code}")
+            update_logs(f"Response headers: {dict(response.headers)}")
+            update_logs(f"Response content: {response.text[:500]}...")  # Log first 500 chars
 
             response.raise_for_status()
             return response
 
         except requests.exceptions.RequestException as e:
-            self.logger.error(f"Request failed: {str(e)}")
-            self.log_to_streamlit(f"Request failed: {str(e)}")
+            update_logs(f"Request failed: {str(e)}")
             if hasattr(e, "response"):
-                self.logger.error(f"Response status code: {e.response.status_code}")
-                self.log_to_streamlit(f"Response status code: {e.response.status_code}")
-                self.logger.error(f"Response content: {e.response.text}")
-                self.log_to_streamlit(f"Response content: {e.response.text}")
+                update_logs(f"Response status code: {e.response.status_code}")
+                update_logs(f"Response content: {e.response.text}")
                 
                 if e.response.status_code == 401:
                     raise ValueError("Invalid token")
@@ -533,117 +531,97 @@ def main():
     tab1, tab2, tab3 = st.tabs(["💬 Chat", "📚 API Documentation", "🔑 Authentication"])
 
     with tab1:
-        try:
-            if is_vlm_model(config):
-                model_type = st.radio(
-                    "Model Capabilities",
-                    ["Text (LLM)", "Visual (VLM)"],
-                    help="This model supports both text and visual inputs",
-                )
-            else:
-                model_type = "Text (LLM)"
-                st.info(f"Model '{config.api_client.model_name}' supports text input only")
-        except Exception as e:
-            st.warning(
-                "Could not detect model capabilities. Defaulting to text-only mode. "
-                "Set TGI_MODEL_TYPE=TGI_VLM for visual capabilities."
+        # Create a container for chat messages with scrolling
+        chat_container = st.container()
+        
+        # Create a container for the input at the bottom
+        input_container = st.container()
+
+        # Use columns to center the input field
+        col1, col2, col3 = input_container.columns([1, 2, 1])
+        
+        with col2:
+            prompt = st.text_area(
+                "Message",
+                key="chat_input",
+                height=100,  # Increased height
+                placeholder="Type your message here...",
+                label_visibility="collapsed"
             )
-            model_type = "Text (LLM)"
-        if "messages" not in st.session_state:
-            st.session_state.messages = []
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                if "image" in message:
-                    st.image(message["image"])
-                st.write(message["content"])
-        image_data = None
-        if model_type == "Visual (VLM)":
-            uploaded_file = st.file_uploader(
-                "Upload an image", type=["jpg", "jpeg", "png"]
-            )
-            if uploaded_file:
-                try:
-                    image = Image.open(uploaded_file)
-                    if not validate_image(image):
-                        st.error(
-                            "Image must be RGB, max 1024x1024 pixels, and under 2MB"
-                        )
-                        image = None
-                    else:
-                        st.image(image, caption="Uploaded Image")
-                except Exception as e:
-                    st.error(f"Error loading image: {str(e)}")
-                    image = None
-        with st.sidebar:
-            st.header("Generation Parameters")
-            params = get_default_params()
-            params["temperature"] = st.slider(
-                "Temperature", 0.0, 1.0, params["temperature"]
-            )
-            params["max_new_tokens"] = st.number_input(
-                "Max New Tokens", 1, 250, params["max_new_tokens"]
-            )
-            params["top_p"] = st.slider("Top P", 0.0, 1.0, params["top_p"])
-            params["top_k"] = st.number_input("Top K", 1, 100, params["top_k"])
-            params["repetition_penalty"] = st.slider(
-                "Repetition Penalty", 1.0, 2.0, params["repetition_penalty"]
-            )
-        if prompt := st.chat_input("Enter your message"):
+
+        # Display messages in the chat container
+        with chat_container:
+            # Reverse the messages to show newest at the bottom
+            messages = st.session_state.get('messages', [])
+            for message in messages:
+                with st.chat_message(message["role"]):
+                    if "image" in message:
+                        st.image(message["image"])
+                    st.write(message["content"])
+
+        # Handle the input
+        if prompt:
             if not config.token:
                 st.error("Please configure your token first!")
                 return
             
-            # Display user message
-            with st.chat_message("user"):
-                st.write(prompt)
-            
-            # Add user message to history
+            # Add user message
             st.session_state.messages.append({"role": "user", "content": prompt})
             
-            # Generate and display assistant response
-            with st.chat_message("assistant"):
-                message_placeholder = st.empty()
-                full_response = ""
-                try:
-                    response = config.api_client.make_stream_request(
-                        prompt,
-                        params,
-                        image_data,
-                        messages=st.session_state.messages[:-1]
-                    )
-                    
-                    for line in response.iter_lines():
-                        if line:
-                            try:
-                                raw_line = line.decode('utf-8')
-                                data = json.loads(raw_line)
-                                
-                                if "generated_text" in data:
-                                    token = data["generated_text"]
-                                    full_response = token
-                                elif "token" in data and "text" in data["token"]:
-                                    token = data["token"]["text"]
-                                    full_response += token
-                                else:
-                                    continue
-                                
-                                message_placeholder.markdown(full_response + "▌")
-                            except json.JSONDecodeError:
-                                continue
-                            except Exception:
-                                continue
-                    
-                    if full_response:
-                        message_placeholder.markdown(full_response)
-                        st.session_state.messages.append(
-                            {"role": "assistant", "content": full_response}
+            # Clear the input
+            st.session_state.chat_input = ""
+            
+            # Rerun to update the UI
+            st.rerun()
+
+        # Generate assistant response
+        if st.session_state.messages and st.session_state.messages[-1]["role"] == "user":
+            with chat_container:
+                with st.chat_message("assistant"):
+                    message_placeholder = st.empty()
+                    full_response = ""
+                    try:
+                        response = config.api_client.make_stream_request(
+                            st.session_state.messages[-1]["content"],
+                            params,
+                            image_data,
+                            messages=st.session_state.messages[:-1]
                         )
-                    else:
-                        message_placeholder.error("No response generated")
-                    
-                except Exception as e:
-                    st.error(f"Error generating response: {str(e)}")
-                    st.info("Response error. Details: " + str(e))
+                        
+                        for line in response.iter_lines():
+                            if line:
+                                try:
+                                    raw_line = line.decode('utf-8')
+                                    data = json.loads(raw_line)
+                                    
+                                    if "generated_text" in data:
+                                        token = data["generated_text"]
+                                        full_response = token
+                                    elif "token" in data and "text" in data["token"]:
+                                        token = data["token"]["text"]
+                                        full_response += token
+                                    else:
+                                        continue
+                                    
+                                    message_placeholder.markdown(full_response + "▌")
+                                except json.JSONDecodeError:
+                                    continue
+                                except Exception:
+                                    continue
+                        
+                        if full_response:
+                            message_placeholder.markdown(full_response)
+                            st.session_state.messages.append(
+                                {"role": "assistant", "content": full_response}
+                            )
+                            # Rerun to update the UI
+                            st.rerun()
+                        else:
+                            message_placeholder.error("No response generated")
+                        
+                    except Exception as e:
+                        st.error(f"Error generating response: {str(e)}")
+                        st.info("Response error. Details: " + str(e))
 
     with tab2:
         st.markdown("### API Documentation")
@@ -658,6 +636,11 @@ def main():
         if st.button("Save Token"):
             config.token = new_token
             st.success("Token saved successfully!")
+
+    # Add a section for debug logs
+    with st.expander("Debug Logs", expanded=True):
+        if 'logs' in st.session_state:
+            st.text('\n'.join(st.session_state.logs))
 
 
 if __name__ == "__main__":
