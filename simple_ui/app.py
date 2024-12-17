@@ -2,10 +2,7 @@ import streamlit as st
 import requests
 import time
 
-# Page config must be the first Streamlit command
 st.set_page_config(page_title="LLM Text generation Demo on Intel XPUs", page_icon="🤖",)# layout="wide")
-
-# Custom CSS
 st.markdown("""
 <style>
     /* Main container */
@@ -97,13 +94,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Sample prompts
-SAMPLE_PROMPTS = [
-    "Write a short story about a robot learning to paint.",
-    "Explain quantum computing to a 5-year-old.",
-    "Create a recipe for the perfect chocolate chip cookies.",
-    "Write a haiku about artificial intelligence."
-]
+# Single sample prompt
+SAMPLE_PROMPT = """Write a creative story about a robot learning to paint. The story should:
+- Be around 200 words
+- Have a clear beginning, middle, and end
+- Include descriptive details about the robot's journey
+- End with a meaningful conclusion"""
 
 # Create tabs
 tab1, tab2 = st.tabs(["🤖 Text Generation", "📚 API Documentation"])
@@ -138,53 +134,42 @@ with tab1:
             max_tokens = st.slider("Max New Tokens", 10, 1000, 100)
             temperature = st.slider("Temperature", 0.0, 2.0, 0.7)
             
-            # Sample prompts section
-            st.markdown("### Try a sample prompt:")
-            cols = st.columns(2)
-            for i, sample in enumerate(SAMPLE_PROMPTS):
-                if cols[i % 2].button(f"Sample {i+1}", key=f"sample_{i}"):
-                    st.session_state.prompt = sample
+            # Sample prompt button
+            if st.button("Use Sample Prompt"):
+                st.session_state.prompt = SAMPLE_PROMPT
             
             prompt = st.text_area("Enter your prompt:", 
                                 height=100, 
                                 value=st.session_state.get('prompt', ''))
             
             if st.button("Generate") and prompt:
-                # Fun loading animation
-                loading_placeholder = st.empty()
                 progress_text = st.empty()
                 loading_emojis = ["🤔", "💭", "⚡", "🔮", "✨"]
                 
-                with st.spinner():
-                    start_time = time.time()
-                    while True:
-                        for emoji in loading_emojis:
-                            if time.time() - start_time > 30:  # Timeout after 30 seconds
-                                break
-                            progress_text.markdown(f"### Generating {emoji}")
-                            time.sleep(0.3)
-                            
-                            try:
-                                response = requests.post(
-                                    f"{base_url}/generate",
-                                    headers=headers,
-                                    json={
-                                        "inputs": prompt,
-                                        "parameters": {
-                                            "max_new_tokens": max_tokens,
-                                            "temperature": temperature
-                                        }
-                                    },
-                                    timeout=30
-                                )
-                                result = response.json()
-                                progress_text.empty()
-                                loading_placeholder.empty()
-                                st.markdown("### Generated Text:")
-                                st.write(result[0]["generated_text"])
-                                break
-                            except requests.exceptions.RequestException:
-                                continue
+                # Show a single loading emoji
+                progress_text.markdown(f"### Generating {loading_emojis[0]}")
+                
+                try:
+                    response = requests.post(
+                        f"{base_url}/generate",
+                        headers=headers,
+                        json={
+                            "inputs": prompt,
+                            "parameters": {
+                                "max_new_tokens": max_tokens,
+                                "temperature": temperature
+                            }
+                        },
+                        timeout=30
+                    )
+                    result = response.json()
+                    progress_text.empty()
+                    st.markdown("### Generated Text:")
+                    st.markdown('<div class="generated-text">', unsafe_allow_html=True)
+                    st.write(result[0]["generated_text"])
+                    st.markdown('</div>', unsafe_allow_html=True)
+                except requests.exceptions.RequestException as e:
+                    st.error(f"Generation Error: {str(e)}")
                     
         except requests.exceptions.RequestException as e:
             st.error(f"Connection Error: {str(e)}")
