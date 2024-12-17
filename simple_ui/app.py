@@ -120,10 +120,12 @@ def initialize_session_state():
         st.session_state.client = TGIClient(BASE_URL, VALID_TOKEN)
     if "show_token" not in st.session_state:
         st.session_state.show_token = False
+    if "generated_response" not in st.session_state:
+        st.session_state.generated_response = None
+    if "generation_time" not in st.session_state:
+        st.session_state.generation_time = None
 
-def main():
-    initialize_session_state()
-    
+def display_generation():
     st.title("🤖 AI Text Generation Interface")
     
     # Input section
@@ -131,34 +133,85 @@ def main():
     
     col1, col2 = st.columns(2)
     with col1:
-        max_tokens = st.slider("Max tokens:", 10, 500, 100)
+        max_tokens = st.slider("Max tokens:", 10, 500, 100, key="max_tokens")
     with col2:
-        temperature = st.slider("Temperature:", 0.1, 1.0, 0.7)
+        temperature = st.slider("Temperature:", 0.1, 1.0, 0.7, key="temperature")
     
     if st.button("Generate", type="primary"):
         if not prompt or prompt.isspace():
             st.warning("Please enter a valid prompt.")
             return
             
-        st.markdown("### Generated Response:")
-        st.markdown(f"*Started at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}*")
-        
         try:
             messages = [{"role": "user", "content": prompt.strip()}]
-            response = st.session_state.client.generate_response(messages, max_tokens)
+            st.session_state.generated_response = st.session_state.client.generate_response(messages, max_tokens)
+            st.session_state.generation_time = datetime.now()
             
-            if response and not response.startswith("Error"):
-                st.markdown("---")
-                st.markdown(response)
-                st.markdown("---")
-                st.markdown(f"""
-                **Generation Details:**
-                - Tokens: {max_tokens}
-                - Temperature: {temperature}
-                - Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-                """)
-        except Exception as e:
-            st.error(f"Generation error: {str(e)}")
+    # Display persistent output
+    if st.session_state.generated_response:
+        st.markdown("### Generated Response:")
+        st.markdown(f"*Generated at: {st.session_state.generation_time.strftime('%Y-%m-%d %H:%M:%S')}*")
+        st.markdown("---")
+        st.markdown(st.session_state.generated_response)
+        st.markdown("---")
+        st.markdown(f"""
+        **Generation Details:**
+        - Tokens: {st.session_state.max_tokens}
+        - Temperature: {st.session_state.temperature}
+        - Time: {st.session_state.generation_time.strftime('%Y-%m-%d %H:%M:%S')}
+        """)
+
+def display_api_docs():
+    st.title("📚 API Documentation")
+    try:
+        with open("API.md", "r") as f:
+            content = f.read()
+            st.markdown(content)
+    except FileNotFoundError:
+        st.error("API documentation file not found.")
+        st.markdown("""
+        ### Default API Documentation
+        Please place your API.md file in the project directory.
+        """)
+
+def display_authentication():
+    st.title("🔑 Authentication Settings")
+    
+    if VALID_TOKEN:
+        st.write("Your API token is configured.")
+        
+        col1, col2 = st.columns([4, 1])
+        with col1:
+            if st.session_state.show_token:
+                st.text_input("API Token", value=VALID_TOKEN, disabled=True)
+            else:
+                st.text_input("API Token", value="*" * 20, disabled=True)
+        
+        with col2:
+            if st.button("👁️ Show/Hide"):
+                st.session_state.show_token = not st.session_state.show_token
+        
+        st.info("Keep your API token secure and never share it with others.")
+    else:
+        st.error("No valid API token found in environment variables.")
+        st.markdown("""
+        Please set your API token in the environment variables:
+        ```bash
+        export VALID_TOKEN=your_token_here
+        ```
+        """)
+
+def main():
+    initialize_session_state()
+    
+    tab1, tab2, tab3 = st.tabs(["🤖 Generation", "📚 API Docs", "🔑 Authentication"])
+    
+    with tab1:
+        display_generation()
+    with tab2:
+        display_api_docs()
+    with tab3:
+        display_authentication()
 
 if __name__ == "__main__":
     main()
