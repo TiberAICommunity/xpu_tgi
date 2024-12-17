@@ -166,19 +166,22 @@ if prompt := st.chat_input("Type your message..."):
 
         # Generate and display assistant response
         with st.chat_message("assistant", avatar=MODEL_CONFIG['avatar']):
-            response_placeholder = st.empty()
-            response = ""
-
-            # Process the stream
-            async def run_stream():
-                async for chunk in st.session_state.model_manager.generate_stream(
-                    st.session_state.conversation.format_for_tgi()
-                ):
-                    nonlocal response
-                    response += chunk
-                    response_placeholder.markdown(response)
-
-            # Run the async generator synchronously
-            asyncio.run(run_stream())
-
-        st.session_state.conversation.add_message("assistant", response)
+            message_placeholder = st.empty()
+            response = ""  # Define response in the outer scope
+            
+            # Get the stream generator
+            stream_gen = st.session_state.model_manager.generate_stream(
+                st.session_state.conversation.format_for_tgi()
+            )
+            
+            # Use write_stream to handle the streaming
+            try:
+                async def process_stream():
+                    nonlocal response  # Now response is properly bound
+                    async for chunk in stream_gen:
+                        yield chunk
+                
+                response = st.write_stream(process_stream())
+                st.session_state.conversation.add_message("assistant", response)
+            except Exception as e:
+                st.error(f"Error generating response: {str(e)}")
