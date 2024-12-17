@@ -167,7 +167,6 @@ if prompt := st.chat_input("Type your message..."):
         # Generate and display assistant response
         with st.chat_message("assistant", avatar=MODEL_CONFIG['avatar']):
             message_placeholder = st.empty()
-            response = ""  # Define response in the outer scope
             
             # Get the stream generator
             stream_gen = st.session_state.model_manager.generate_stream(
@@ -177,7 +176,6 @@ if prompt := st.chat_input("Type your message..."):
             # Use write_stream to handle the streaming
             try:
                 async def process_stream():
-                    nonlocal response  # Now response is properly bound
                     async for chunk in stream_gen:
                         yield chunk
                 
