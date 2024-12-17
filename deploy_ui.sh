@@ -136,3 +136,37 @@ else
     trap 'kill $UI_PID 2>/dev/null || true' EXIT INT TERM
     wait $UI_PID
 fi
+
+# First check for auth token
+if [ ! -f ".auth_token.env" ] && [ -z "${VALID_TOKEN}" ]; then
+    echo "❌ Error: No authentication token found!"
+    echo "Please either:"
+    echo "  1. Run the TGI service first to create .auth_token.env"
+    echo "  2. Set the VALID_TOKEN environment variable"
+    exit 1
+fi
+
+# Source auth token if exists
+[ -f ".auth_token.env" ] && source .auth_token.env
+
+# Get model name from config or use default
+if [ -f ".model_config" ]; then
+    source .model_config
+    echo "📚 Found model configuration"
+    
+    # Load model-specific environment if available
+    if [ -f ".model_env/${TGI_MODEL_NAME}.env" ]; then
+        source ".model_env/${TGI_MODEL_NAME}.env"
+        echo "🔧 Loaded model-specific configuration"
+    else
+        echo "⚠️  No model-specific configuration found, using defaults"
+    fi
+else
+    echo "⚠️  No model configuration found, using defaults"
+    export TGI_MODEL_NAME="unknown-model"
+    export MAX_TOTAL_TOKENS=1024
+    export MAX_INPUT_LENGTH=512
+fi
+
+echo "🤖 Using model: $TGI_MODEL_NAME"
+echo "📝 Max tokens: $MAX_TOTAL_TOKENS"

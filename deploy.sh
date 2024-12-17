@@ -88,6 +88,16 @@ deploy() {
 
     check_gpu_availability
 
+    # Create/update model config file with model details
+    info "Creating model configuration"
+    echo "TGI_MODEL_NAME=${model_name}" > .model_config
+    if [ -f "${SCRIPT_DIR}/models/${model_name}/config/model.env" ]; then
+        cat "${SCRIPT_DIR}/models/${model_name}/config/model.env" >> .model_config
+        success "Model configuration saved"
+    else
+        error "Model configuration not found at ${SCRIPT_DIR}/models/${model_name}/config/model.env"
+    fi
+
     # Check if base services are running
     if check_base_services; then
         info "Base services already running, proceeding with model deployment"

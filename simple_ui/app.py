@@ -33,9 +33,28 @@ class APIClient:
     def __init__(self, config):
         self.config = config
         self.session = requests.Session()
-        self.model_name = None
+        
+        # Get model configuration from environment
+        self.model_name = os.getenv("TGI_MODEL_NAME", "unknown-model")
+        
+        # Auto-detect model type if not explicitly set
+        self.model_type = os.getenv("TGI_MODEL_TYPE")
+        if not self.model_type:
+            # List of known VLM model identifiers
+            vlm_identifiers = [
+                "llava", "bridge-tower", "cogvlm", "visualglm",
+                "minigpt4", "qwen-vl", "bakllava", "multimodal"
+            ]
+            # Check if model name contains any VLM identifiers
+            if any(id in self.model_name.lower() for id in vlm_identifiers):
+                self.model_type = "TGI_VLM"
+            else:
+                self.model_type = "TGI_LLM"
+        
+        # Get model limits from environment (set by model.env)
+        self.max_context_length = int(os.getenv("MAX_TOTAL_TOKENS", "1024"))
+        self.max_input_length = int(os.getenv("MAX_INPUT_LENGTH", "512"))
         self.gpu_id = 0
-        self.max_context_length = 1024
         self.approximate_token_length = 4
 
     def get_model_context_length(self) -> int:
@@ -43,17 +62,18 @@ class APIClient:
         if not self.model_name:
             info = get_model_info(self.config)
             self.model_name = info.get("model_id", "").split("/")[-1]
-            self.max_context_length = info.get("max_sequence_length", 4096)
+            self.max_context_length = info.get("max_sequence_length", 1024)
         return self.max_context_length
 
     def format_chat_history(self, messages: list, current_prompt: str) -> str:
         """Format chat history for the model while respecting context length."""
-        max_length = self.get_model_context_length()
+        max_length = self.max_context_length
         reserve_tokens = 500
         formatted_messages = []
         current_length = 0
         prompt_msg = f"Human: {current_prompt}\nAssistant:"
         current_length += len(prompt_msg.split()) * self.approximate_token_length
+        
         for msg in reversed(messages):
             role = msg["role"]
             content = msg["content"]
@@ -63,6 +83,7 @@ class APIClient:
                 break
             formatted_messages.insert(0, formatted_msg)
             current_length += msg_tokens
+        
         formatted_messages.append(prompt_msg)
         return "\n".join(formatted_messages)
 
@@ -244,10 +265,10 @@ def get_model_info(config) -> dict:
         return {}
 
 
-def is_vlm_model(model_info: dict) -> bool:
-    model_name = model_info.get("model_name", "").lower()
-    vlm_indicators = ["llava", "visual", "multimodal", "vlm"]
-    return any(indicator in model_name for indicator in vlm_indicators)
+def is_vlm_model(config) -> bool:
+    """Determine if the model is VLM based on environment variable."""
+    model_type = os.getenv("TGI_MODEL_TYPE", "TGI_LLM")
+    return model_type == "TGI_VLM"
 
 
 def sanitize_input(text: str) -> str:
@@ -438,9 +459,7 @@ def main():
 
     with tab1:
         try:
-            model_info = get_model_info(config)
-            is_vlm = is_vlm_model(model_info)
-            if is_vlm:
+            if is_vlm_model(config):
                 model_type = st.radio(
                     "Model Capabilities",
                     ["Text (LLM)", "Visual (VLM)"],
@@ -448,10 +467,11 @@ def main():
                 )
             else:
                 model_type = "Text (LLM)"
-                st.info("This model supports text input only")
+                st.info(f"Model '{config.api_client.model_name}' supports text input only")
         except Exception as e:
             st.warning(
-                "Could not detect model capabilities. Defaulting to text-only mode."
+                "Could not detect model capabilities. Defaulting to text-only mode. "
+                "Set TGI_MODEL_TYPE=TGI_VLM for visual capabilities."
             )
             model_type = "Text (LLM)"
         if "messages" not in st.session_state:
