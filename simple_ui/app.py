@@ -111,6 +111,15 @@ st.markdown(
         text-align: center;
         margin: 1rem auto;
     }
+    
+    .generated-text pre {
+        background-color: #e9ecef;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        white-space: pre-wrap;
+        font-family: monospace;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -192,10 +201,13 @@ with tab1:
                                 )
                             full_text = result[0]["generated_text"]
                             st.markdown(
-                                '<div class="generated-text">', unsafe_allow_html=True
+                                """
+                                <div class="generated-text">
+                                    <pre>{}</pre>
+                                </div>
+                                """.format(full_text),
+                                unsafe_allow_html=True
                             )
-                            st.markdown(full_text)
-                            st.markdown("</div>", unsafe_allow_html=True)
                         except (requests.exceptions.RequestException, ValueError) as e:
                             st.error(f"Generation Error: {str(e)}")
         except requests.exceptions.RequestException as e:
