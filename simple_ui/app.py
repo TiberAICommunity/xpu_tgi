@@ -13,6 +13,8 @@ st.markdown(
     /* Main container */
     .main {
         padding: 2rem;
+        max-width: 1200px !important;
+        margin: 0 auto;
     }
     
     /* Headers */
@@ -44,11 +46,17 @@ st.markdown(
         font-weight: 600;
         border-radius: 8px;
         transition: all 0.3s ease;
+        min-width: 200px;
+        display: inline-block;
+        background-color: #FF69B4 !important;
+        color: white !important;
+        border: none !important;
     }
+    
     .stButton > button:hover {
         transform: translateY(-2px);
-        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-    }
+        box-shadow: 0 4px 12px rgba(255,105,180,0.3);
+        background-color: #FF1493 !important; 
     
     /* Sample prompts */
     .sample-prompt {
@@ -63,7 +71,9 @@ st.markdown(
         background-color: #f8f9fa;
         padding: 2rem;
         border-radius: 10px;
-        margin-top: 2rem;
+        margin: 2rem auto;
+        max-width: 900px;
+        line-height: 1.6;
     }
     
     .generated-text pre {
@@ -128,6 +138,12 @@ st.markdown(
         background-color: #BBDEFB;
         transform: translateX(5px);
     }
+    
+    /* Center the generate button */
+    .stButton {
+        text-align: center;
+        margin: 2rem 0;
+    }
 </style>
 """,
     unsafe_allow_html=True,
@@ -164,57 +180,36 @@ with tab1:
                 value=st.session_state.get("prompt", ""),
             )
 
-            col1, col2, col3 = st.columns([1, 1, 2])
+            col1, col2, col3 = st.columns([1, 4, 1])
             with col2:
                 if st.button("Generate 🚀", use_container_width=True) and prompt:
-                    progress_placeholder = st.empty()
-                    loading_emojis = ["🤔", "💭", "⚡", "🔮", "✨"]
-                    loading_thread_active = threading.Event()
-                    loading_thread_active.set()
-
-                    def loading_animation():
-                        i = 0
-                        while loading_thread_active.is_set():
-                            progress_placeholder.markdown(
-                                f"### Generating {loading_emojis[i % len(loading_emojis)]}"
-                            )
-                            time.sleep(0.3)
-                            i += 1
-
-                    loading_thread = threading.Thread(target=loading_animation)
-                    loading_thread.start()
-                    try:
-                        response = requests.post(
-                            f"{base_url}/generate",
-                            headers=headers,
-                            json={
-                                "inputs": prompt,
-                                "parameters": {
-                                    "max_new_tokens": max_tokens,
-                                    "temperature": temperature,
+                    with st.spinner('Generating response...'):
+                        try:
+                            response = requests.post(
+                                f"{base_url}/generate",
+                                headers=headers,
+                                json={
+                                    "inputs": prompt,
+                                    "parameters": {
+                                        "max_new_tokens": max_tokens,
+                                        "temperature": temperature,
+                                    },
                                 },
-                            },
-                            timeout=60,
-                        )
-                        response.raise_for_status()
-                        result = response.json()
-                        if not isinstance(result, list) or len(result) == 0 or "generated_text" not in result[0]:
-                            raise ValueError("Unexpected response format from the server")
-                        st.markdown("---") 
-                        st.markdown('<div class="generated-text">', unsafe_allow_html=True)
-                        st.markdown("### Your Prompt:")
-                        st.markdown(f"```\n{prompt}\n```")
-                        st.markdown("### Generated Response:")
-                        generated_text = result[0]["generated_text"][len(prompt):].strip()
-                        generated_text = generated_text.replace('```', '\\```')
-                        st.markdown(generated_text)
-                        st.markdown("</div>", unsafe_allow_html=True)
-                    except (requests.exceptions.RequestException, ValueError) as e:
-                        st.error(f"Generation Error: {str(e)}")
-                    finally:
-                        loading_thread_active.clear()
-                        loading_thread.join()
-                        progress_placeholder.empty()
+                                timeout=60,
+                            )
+                            response.raise_for_status()
+                            result = response.json()
+                            if not isinstance(result, list) or len(result) == 0 or "generated_text" not in result[0]:
+                                raise ValueError("Unexpected response format from the server")
+                            
+                            st.markdown("---")
+                            st.markdown('<div class="generated-text">', unsafe_allow_html=True)
+                            full_text = result[0]["generated_text"]
+                            st.markdown(full_text)
+                            st.markdown("</div>", unsafe_allow_html=True)
+                            
+                        except (requests.exceptions.RequestException, ValueError) as e:
+                            st.error(f"Generation Error: {str(e)}")
         except requests.exceptions.RequestException as e:
             st.error(f"Connection Error: {str(e)}")
     else:
