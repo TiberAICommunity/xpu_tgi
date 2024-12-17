@@ -1,59 +1,166 @@
 # TGI Service API Documentation
 
-## Base URL
-`http://localhost:8000/generate`
-
 ## Authentication
+Generate a token using the provided script:
+```bash
+export VALID_TOKEN=$(./utils/generate_token.py)
+```
+
 All requests require Bearer token authentication:
 ```
 Authorization: Bearer <your-valid-token>
 ```
 
-### Rate Limiting for Failed Authentication
-- **Maximum failed attempts**: 5
-- **Ban duration**: 300 seconds
-- **Reset time**: 1800 seconds
+## Base URL Pattern
+```
+http://localhost:8000/<model-name>/gpu<number>
+```
 
----
+Example:
+```
+http://localhost:8000/hermes-2-pro-tgi/gpu0
+```
+
+Available models:
+- hermes-2-pro-tgi
+- phi-3-mini-4k-tgi
+- codellama-7b-instruct-tgi
+- llava-v1.6-mistral-7b-tgi
+- flan-ul2-tgi
 
 ## API Endpoints
 
-### 1. **Text Generation (LLM)**
+### 1. Text Generation
 Generate text using language models.
 
-**Endpoint**: `POST /generate`
+**Endpoint**: `POST /<model-name>/gpu<number>/generate`
 
 **Headers**:
 - `Content-Type`: `application/json`
 - `Authorization`: `Bearer <your-valid-token>`
 
-**Request Body**:
+**Request Schema**:
 ```json
 {
     "inputs": "string",
     "parameters": {
-        "max_new_tokens": "integer",        
-        "temperature": "float",            
-        "top_p": "float",                 
-        "top_k": "integer",               
-        "repetition_penalty": "float",    
-        "stop": ["string"],               
-        "seed": "integer",                
-        "do_sample": "boolean"           
-    }
+        "max_new_tokens": "integer",
+        "temperature": "float",
+        "top_p": "float",
+        "top_k": "integer",
+        "repetition_penalty": "float",
+        "stop": ["string"],
+        "seed": "integer | null",
+        "do_sample": "boolean",
+        "best_of": "integer",
+        "decoder_input_details": "boolean",
+        "details": "boolean",
+        "frequency_penalty": "float",
+        "typical_p": "float",
+        "watermark": "boolean",
+        "return_full_text": "boolean"
+    },
+    "stream": "boolean"
 }
 ```
 
-**Response**:
+**Response Schema**:
+
+For non-streaming (`stream: false`):
 ```json
 {
     "generated_text": "string",
     "details": {
         "finish_reason": "string",
         "generated_tokens": "integer",
-        "seed": "integer"
+        "seed": "integer",
+        "prefill": [{
+            "id": "integer",
+            "text": "string",
+            "logprob": "float | null"
+        }],
+        "tokens": [{
+            "id": "integer",
+            "text": "string",
+            "logprob": "float",
+            "special": "boolean"
+        }]
     }
 }
+```
+
+For streaming (`stream: true`):
+```json
+{
+    "index": "integer",
+    "token": {
+        "id": "integer",
+        "text": "string",
+        "logprob": "float",
+        "special": "boolean"
+    },
+    "generated_text": "string | null",
+    "details": "object | null"
+}
+```
+
+---
+
+## Examples
+
+### Non-Streaming Example
+```bash
+# Using Hermes-2-pro on GPU 0
+curl -X POST http://localhost:8000/hermes-2-pro-tgi/gpu0/generate \
+     -H "Authorization: Bearer ${VALID_TOKEN}" \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "inputs": "What are three key benefits of renewable energy?",
+       "parameters": {
+         "max_new_tokens": 150,
+         "temperature": 0.7,
+         "do_sample": true,
+         "details": true
+       },
+       "stream": false
+     }'
+```
+
+Example Response:
+```json
+{
+    "generated_text": "1. Environmental Protection: Renewable energy sources produce little to no greenhouse gas emissions...",
+    "details": {
+        "finish_reason": "length",
+        "generated_tokens": 150,
+        "seed": 42
+    }
+}
+```
+
+### Streaming Example
+```bash
+# Using Hermes-2-pro on GPU 0
+curl -X POST http://localhost:8000/hermes-2-pro-tgi/gpu0/generate \
+     -H "Authorization: Bearer ${VALID_TOKEN}" \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "inputs": "My name is Olivier and I",
+       "parameters": {
+         "max_new_tokens": 20,
+         "temperature": 0.7,
+         "do_sample": true,
+         "details": true
+       },
+       "stream": true
+     }'
+```
+
+Example Stream Response:
+```
+data: {"index": 17, "token": {"id": 2955, "text": " design", "logprob": -0.60546875, "special": false}, "generated_text": null, "details": null}
+data: {"index": 18, "token": {"id": 11, "text": ",", "logprob": -0.12695312, "special": false}, "generated_text": null, "details": null}
+data: {"index": 19, "token": {"id": 5557, "text": " technology", "logprob": 0.0, "special": false}, "generated_text": null, "details": null}
 ```
 
 ---
@@ -61,38 +168,96 @@ Generate text using language models.
 ### 2. **Visual Language Model (VLM)**
 Process images and generate text responses.
 
-**Endpoint**: `POST /generate`
+**Endpoint**: `POST /<model-name>/gpu<number>/generate`
 
 **Headers**:
 - `Content-Type`: `application/json`
 - `Authorization`: `Bearer <your-valid-token>`
 
-**Request Format**:
+**Request Schema**:
 ```json
 {
     "inputs": "<image>base64_encoded_image</image>\nYour question about the image?",
     "parameters": {
         "max_new_tokens": "integer",
-        "temperature": "float"
+        "temperature": "float",
+        "top_p": "float",
+        "top_k": "integer",
+        "repetition_penalty": "float",
+        "do_sample": "boolean",
+        "details": "boolean"
+    },
+    "stream": "boolean"
+}
+```
+
+### VLM Example
+```bash
+# Using LLaVA on GPU 0
+curl -X POST http://localhost:8000/llava-v1.6-mistral-7b-tgi/gpu0/generate \
+     -H "Authorization: Bearer ${VALID_TOKEN}" \
+     -H 'Content-Type: application/json' \
+     -d '{
+       "inputs": "<image>'$(base64 -w0 image.jpg)'</image>\nDescribe this image in detail.",
+       "parameters": {
+         "max_new_tokens": 200,
+         "temperature": 0.3,
+         "do_sample": true,
+         "details": true
+       },
+       "stream": false
+     }'
+```
+
+Example Response:
+```json
+{
+    "generated_text": "The image shows a modern kitchen interior with stainless steel appliances...",
+    "details": {
+        "finish_reason": "length",
+        "generated_tokens": 200,
+        "seed": 42
     }
 }
 ```
 
+### Python Example for VLM
+```python
+import base64
+import requests
+
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+# Using LLaVA on GPU 0
+url = "http://localhost:8000/llava-v1.6-mistral-7b-tgi/gpu0/generate"
+headers = {
+    "Content-Type": "application/json",
+    "Authorization": f"Bearer {VALID_TOKEN}"
+}
+
+# Prepare the request
+image_data = encode_image("path/to/image.jpg")
+payload = {
+    "inputs": f"<image>{image_data}</image>\nDescribe this image in detail.",
+    "parameters": {
+        "max_new_tokens": 200,
+        "temperature": 0.3,
+        "do_sample": true,
+        "details": true
+    },
+    "stream": false
+}
+
+# Make the request
+response = requests.post(url, headers=headers, json=payload)
+print(response.json())
+```
+
 ---
 
-### 3. **Streaming Generation**
-Generate a stream of tokens.
-
-**Endpoint**: `POST /generate_stream`
-
-**Headers**:
-- `Content-Type`: `application/json`
-- `Authorization`: `Bearer <your-valid-token>`
-
-**Request Body**: Same as /generate endpoint
-**Response**: Server-Sent Events stream of tokens
-
-### 4. **Model Information**
+### 3. **Model Information**
 Get information about the loaded model.
 
 **Endpoint**: `GET /info`
@@ -100,13 +265,33 @@ Get information about the loaded model.
 **Headers**:
 - `Authorization`: `Bearer <your-valid-token>`
 
-**Response**:
+**Response Schema**:
 ```json
 {
-    "model_name": "string",
-    "model_type": "string",
+    "model_id": "string",
+    "model_dtype": "string",
+    "model_device_type": "string",
+    "model_pipeline_tag": "string",
     "max_sequence_length": "integer",
-    "capabilities": ["string"]
+    "timestamp": "string",
+    "model_sha": "string",
+    "sha": "string",
+    "docker_label": "string"
+}
+```
+
+Example Response:
+```json
+{
+    "model_id": "TheBloke/OpenHermes-2.5-Mistral-7B-GGUF",
+    "model_dtype": "float16",
+    "model_device_type": "cuda",
+    "model_pipeline_tag": "text-generation",
+    "max_sequence_length": 4096,
+    "timestamp": "2024-01-15T12:34:56.789Z",
+    "model_sha": "a1b2c3d4e5f6...",
+    "sha": "g7h8i9j0k1l2...",
+    "docker_label": "tgi-latest"
 }
 ```
 
@@ -128,55 +313,6 @@ Example:
         "temperature": 0.7
     }
 }
-```
-
----
-
-## Examples
-
-### Text Generation Example (LLM)
-```python
-import requests
-
-headers = {
-    "Content-Type": "application/json",
-    "Authorization": "Bearer <your-valid-token>"
-}
-payload = {
-    "inputs": "<|im_start|>system\nYou are a helpful assistant.\n<|im_end|>\n<|im_start|>user\nWhat are three key benefits of renewable energy?\n<|im_end|>\n<|im_start|>assistant",
-    "parameters": {
-        "max_new_tokens": 150,
-        "temperature": 0.7
-    }
-}
-response = requests.post("http://localhost:8000/generate", headers=headers, json=payload)
-print(response.json())
-```
-
-### Image Analysis Example (VLM)
-```python
-import base64
-from PIL import Image
-import requests
-from io import BytesIO
-
-# Load and prepare image
-image = Image.open("example.jpg")
-# Resize if needed (max 1024x1024)
-buffer = BytesIO()
-image.save(buffer, format="JPEG")
-base64_image = base64.b64encode(buffer.getvalue()).decode('utf-8')
-
-# Prepare request
-payload = {
-    "inputs": f"<|im_start|>system\nAnalyze the image.\n<|im_end|>\n<|im_start|>user\n<image>{base64_image}</image>\nDescribe what you see in detail.\n<|im_end|>\n<|im_start|>assistant",
-    "parameters": {
-        "max_new_tokens": 200,
-        "temperature": 0.3
-    }
-}
-response = requests.post("http://localhost:8000/generate", headers=headers, json=payload)
-print(response.json())
 ```
 
 ---
@@ -249,6 +385,7 @@ print(response.json())
 - **Supported formats**: JPEG, PNG, WebP.
 - **Recommended size**: < 2MB.
 - **Color space**: RGB.
+- **Important**: Preprocessing images to smaller dimensions (e.g., 512x512) is strongly recommended to avoid exceeding the model's context length, as larger images consume more tokens and may prevent the model from processing your text prompt effectively.
 
 ---
 

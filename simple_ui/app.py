@@ -33,21 +33,63 @@ class APIClient:
     def __init__(self, config):
         self.config = config
         self.session = requests.Session()
+        self.model_name = None
+        self.gpu_id = 0
+        self.max_context_length = 1024
+        self.approximate_token_length = 4
+
+    def get_model_context_length(self) -> int:
+        """Get the model's maximum context length from info endpoint."""
+        if not self.model_name:
+            info = get_model_info(self.config)
+            self.model_name = info.get("model_id", "").split("/")[-1]
+            self.max_context_length = info.get("max_sequence_length", 4096)
+        return self.max_context_length
+
+    def format_chat_history(self, messages: list, current_prompt: str) -> str:
+        """Format chat history for the model while respecting context length."""
+        max_length = self.get_model_context_length()
+        reserve_tokens = 500
+        formatted_messages = []
+        current_length = 0
+        prompt_msg = f"Human: {current_prompt}\nAssistant:"
+        current_length += len(prompt_msg.split()) * self.approximate_token_length
+        for msg in reversed(messages):
+            role = msg["role"]
+            content = msg["content"]
+            formatted_msg = f"{role.title()}: {content}"
+            msg_tokens = len(formatted_msg.split()) * self.approximate_token_length
+            if current_length + msg_tokens > (max_length - reserve_tokens):
+                break
+            formatted_messages.insert(0, formatted_msg)
+            current_length += msg_tokens
+        formatted_messages.append(prompt_msg)
+        return "\n".join(formatted_messages)
 
     def make_request(
-        self, prompt: str, parameters: dict, image_data: Optional[str] = None
+        self,
+        prompt: str,
+        parameters: dict,
+        image_data: Optional[str] = None,
+        messages: list = None,
     ) -> requests.Response:
         """Make secure API requests with retry and validation."""
         if not self.config.rate_limiter.can_make_request():
             raise ValueError("Rate limit exceeded")
 
         try:
-            url = f"{self.config.base_url}/generate"
-            sanitized_prompt = sanitize_input(prompt)
-            if image_data:
-                inputs = f"<image>{image_data}</image>\n{sanitized_prompt}"
+            if not self.model_name:
+                info = get_model_info(self.config)
+                self.model_name = info.get("model_id", "").split("/")[-1]
+            url = f"{self.config.base_url}/{self.model_name}/gpu{self.gpu_id}/generate"
+            if messages:
+                formatted_input = self.format_chat_history(messages, prompt)
             else:
-                inputs = f"<|im_start|>user\n{sanitized_prompt}\n<|im_end|>\n<|im_start|>assistant"
+                formatted_input = f"Human: {prompt}\nAssistant:"
+            if image_data:
+                inputs = f"<image>{image_data}</image>\n{formatted_input}"
+            else:
+                inputs = formatted_input
             validated_params = {
                 "max_new_tokens": min(
                     max(1, parameters.get("max_new_tokens", 150)), 500
@@ -58,10 +100,15 @@ class APIClient:
                 "repetition_penalty": min(
                     max(1.0, parameters.get("repetition_penalty", 1.1)), 2.0
                 ),
+                "do_sample": True,
+                "details": True,
             }
-            payload = {"inputs": inputs, "parameters": validated_params}
-            response = self.session.request(
-                method="POST",
+            payload = {
+                "inputs": inputs,
+                "parameters": validated_params,
+                "stream": False,
+            }
+            response = self.session.post(
                 url=url,
                 headers={
                     "Authorization": f"Bearer {self.config.token}",
@@ -83,23 +130,34 @@ class APIClient:
             raise ValueError(f"API request failed: {str(e)}")
 
     def make_stream_request(
-        self, prompt: str, parameters: dict, image_data: Optional[str] = None
+        self,
+        prompt: str,
+        parameters: dict,
+        image_data: Optional[str] = None,
+        messages: list = None,
     ):
         """Make streaming API request."""
         if not self.config.rate_limiter.can_make_request():
             raise ValueError("Rate limit exceeded")
 
         try:
-            url = f"{self.config.base_url}/generate_stream"
-            if image_data:
-                inputs = f"<image>{image_data}</image>\n{prompt}"
+            if not self.model_name:
+                info = get_model_info(self.config)
+                self.model_name = info.get("model_id", "").split("/")[-1]
+            url = f"{self.config.base_url}/{self.model_name}/gpu{self.gpu_id}/generate"
+            if messages:
+                formatted_input = self.format_chat_history(messages, prompt)
             else:
-                inputs = (
-                    f"<|im_start|>user\n{prompt}\n<|im_end|>\n<|im_start|>assistant"
-                )
-
-            payload = {"inputs": inputs, "parameters": parameters}
-
+                formatted_input = f"Human: {prompt}\nAssistant:"
+            if image_data:
+                inputs = f"<image>{image_data}</image>\n{formatted_input}"
+            else:
+                inputs = formatted_input
+            payload = {
+                "inputs": inputs,
+                "parameters": {**parameters, "do_sample": True, "details": True},
+                "stream": True,
+            }
             response = self.session.post(
                 url,
                 headers={
@@ -113,7 +171,6 @@ class APIClient:
             )
             response.raise_for_status()
             return response
-
         except requests.exceptions.RequestException as e:
             if hasattr(e, "response"):
                 if e.response.status_code == 401:
@@ -174,11 +231,14 @@ def get_default_params() -> dict:
 
 
 def get_model_info(config) -> dict:
+    """Get model information from the API."""
     try:
         response = requests.get(
             f"{config.base_url}/info",
             headers={"Authorization": f"Bearer {config.token}"},
+            timeout=10,
         )
+        response.raise_for_status()
         return response.json()
     except Exception:
         return {}
@@ -455,7 +515,12 @@ def main():
             with st.spinner("Connecting..."):
                 try:
                     response = config.api_client.make_stream_request(
-                        prompt, params, image_data
+                        prompt,
+                        params,
+                        image_data,
+                        messages=st.session_state.messages[
+                            :-1
+                        ],  # Exclude the current message
                     )
                     with st.chat_message("assistant"):
                         message_placeholder = st.empty()
