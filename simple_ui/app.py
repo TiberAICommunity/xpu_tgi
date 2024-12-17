@@ -148,13 +148,7 @@ class APIClient:
         messages: list = None,
     ):
         """Make streaming API request."""
-        if not self.config.rate_limiter.can_make_request():
-            raise ValueError("Rate limit exceeded")
-
         try:
-            if not self.model_name:
-                info = get_model_info(self.config)
-                self.model_name = info.get("model_id", "").split("/")[-1]
             url = f"{self.config.base_url}/{self.model_name}/gpu{self.gpu_id}/generate"
             
             # Format input based on model type
@@ -165,9 +159,15 @@ class APIClient:
 
             payload = {
                 "inputs": formatted_input,
-                "parameters": {**parameters, "do_sample": True, "details": True},
-                "stream": True,
+                "parameters": {
+                    **parameters,
+                    "stream": True,
+                    "details": True
+                }
             }
+            
+            print(f"Making request to: {url}")  # Debug output
+            print(f"Payload: {json.dumps(payload, indent=2)}")  # Debug output
             
             response = self.session.post(
                 url,
@@ -182,13 +182,9 @@ class APIClient:
             )
             response.raise_for_status()
             return response
-        except requests.exceptions.RequestException as e:
-            if hasattr(e, "response"):
-                if e.response.status_code == 401:
-                    raise ValueError("Invalid token")
-                elif e.response.status_code == 429:
-                    raise ValueError("Rate limit exceeded")
-            raise ValueError(f"API request failed: {str(e)}")
+        except Exception as e:
+            print(f"Stream request error: {str(e)}")  # Debug output
+            raise
 
 
 class HistoryManager:
@@ -524,31 +520,39 @@ def main():
                         prompt,
                         params,
                         image_data,
-                        messages=st.session_state.messages[:-1]  # Exclude current message
+                        messages=st.session_state.messages[:-1]
                     )
                     
                     for line in response.iter_lines():
                         if line:
                             try:
-                                data = json.loads(line)
-                                if "token" in data:
+                                data = json.loads(line.decode('utf-8'))
+                                # Check for generated_text in the response
+                                if "generated_text" in data:
+                                    token = data["generated_text"]
+                                    full_response = token  # Replace instead of append for complete responses
+                                    message_placeholder.markdown(full_response)
+                                # Also check for token-by-token streaming
+                                elif "token" in data and "text" in data["token"]:
                                     token = data["token"]["text"]
                                     full_response += token
-                                    # Update message in place
                                     message_placeholder.markdown(full_response + "▌")
                             except json.JSONDecodeError:
                                 continue
                     
                     # Final update without cursor
-                    message_placeholder.markdown(full_response)
+                    if full_response:
+                        message_placeholder.markdown(full_response)
+                        # Add assistant response to history
+                        st.session_state.messages.append(
+                            {"role": "assistant", "content": full_response}
+                        )
+                    else:
+                        message_placeholder.error("No response generated")
                     
-                    # Add assistant response to history
-                    st.session_state.messages.append(
-                        {"role": "assistant", "content": full_response}
-                    )
                 except Exception as e:
                     st.error(f"Error generating response: {str(e)}")
-                    st.info("If the error persists, try using text-only mode")
+                    st.info("Response error. Details: " + str(e))
 
     with tab2:
         st.markdown("### API Documentation")
