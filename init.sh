@@ -29,7 +29,6 @@ error() {
     exit 1
 }
 warning() { echo -e "\n\033[1;33m! $1\033[0m"; }
-
 setup_jq() {
     info "Setting up JQ wrapper"
     if command -v jq >/dev/null 2>&1; then
@@ -37,6 +36,13 @@ setup_jq() {
         return 0
     fi
 
+    info "jq not found. Attempting to install..."
+    if sudo apt-get update >/dev/null 2>&1 && sudo apt-get install -y jq >/dev/null 2>&1; then
+        success "Successfully installed native jq"
+        return 0
+    fi
+
+    warning "Could not install native jq. Falling back to container version..."
     info "Pulling official jq image"
     if ! docker pull ghcr.io/jqlang/jq:latest >/dev/null 2>&1; then
         error "Failed to pull jq Docker image"
