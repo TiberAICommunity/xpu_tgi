@@ -165,11 +165,11 @@ with tab1:
             with col1:
                 if st.button("Use Sample Prompt"):
                     st.session_state.prompt = SAMPLE_PROMPT
-                    st.experimental_rerun()
+                    st.rerun()
             with col2:
                 if st.button("Clear"):
                     st.session_state.prompt = ""
-                    st.experimental_rerun()
+                    st.rerun()
             
             prompt = st.text_area(
                 "Enter your prompt:",
