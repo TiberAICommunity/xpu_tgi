@@ -156,19 +156,19 @@ class APIClient:
                 info = get_model_info(self.config)
                 self.model_name = info.get("model_id", "").split("/")[-1]
             url = f"{self.config.base_url}/{self.model_name}/gpu{self.gpu_id}/generate"
-            if messages:
-                formatted_input = self.format_chat_history(messages, prompt)
+            
+            # Format input based on model type
+            if self.model_type == "TGI_VLM":
+                formatted_input = self.format_vlm_prompt(prompt, image_data, messages)
             else:
-                formatted_input = f"Human: {prompt}\nAssistant:"
-            if image_data:
-                inputs = f"<image>{image_data}</image>\n{formatted_input}"
-            else:
-                inputs = formatted_input
+                formatted_input = self.format_llm_prompt(prompt, messages)
+
             payload = {
-                "inputs": inputs,
+                "inputs": formatted_input,
                 "parameters": {**parameters, "do_sample": True, "details": True},
                 "stream": True,
             }
+            
             response = self.session.post(
                 url,
                 headers={
@@ -507,47 +507,42 @@ def main():
             if not config.token:
                 st.error("Please configure your token first!")
                 return
+            
+            # Display user message
             with st.chat_message("user"):
-                if model_type == "Visual (VLM)" and uploaded_file:
-                    st.image(image)
                 st.write(prompt)
-            message_data = {"role": "user", "content": prompt}
-            if model_type == "Visual (VLM)" and uploaded_file:
-                try:
-                    buffered = io.BytesIO()
-                    image.save(buffered, format="JPEG")
-                    image_data = base64.b64encode(buffered.getvalue()).decode()
-                    message_data["image"] = image_data
-                except Exception as e:
-                    st.error(f"Error processing image: {str(e)}")
-                    image_data = None
-            st.session_state.messages.append(message_data)
-            with st.spinner("Connecting..."):
+            
+            # Add user message to history
+            st.session_state.messages.append({"role": "user", "content": prompt})
+            
+            # Generate and display assistant response
+            with st.chat_message("assistant"):
+                message_placeholder = st.empty()
+                full_response = ""
                 try:
                     response = config.api_client.make_stream_request(
                         prompt,
                         params,
                         image_data,
-                        messages=st.session_state.messages[
-                            :-1
-                        ],  # Exclude the current message
+                        messages=st.session_state.messages[:-1]  # Exclude current message
                     )
-                    with st.chat_message("assistant"):
-                        message_placeholder = st.empty()
-                        full_response = ""
-                        for line in response.iter_lines():
-                            if line:
-                                try:
-                                    data = json.loads(line)
-                                    if "token" in data:
-                                        token = data["token"]["text"]
-                                        full_response += token
-                                        message_placeholder.markdown(
-                                            full_response + "▌"
-                                        )
-                                except json.JSONDecodeError:
-                                    continue
-                        message_placeholder.markdown(full_response)
+                    
+                    for line in response.iter_lines():
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                if "token" in data:
+                                    token = data["token"]["text"]
+                                    full_response += token
+                                    # Update message in place
+                                    message_placeholder.markdown(full_response + "▌")
+                            except json.JSONDecodeError:
+                                continue
+                    
+                    # Final update without cursor
+                    message_placeholder.markdown(full_response)
+                    
+                    # Add assistant response to history
                     st.session_state.messages.append(
                         {"role": "assistant", "content": full_response}
                     )
