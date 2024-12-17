@@ -3,6 +3,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
 
+
 st.set_page_config(
     page_title="LLM Text generation Demo on Intel XPUs",
     page_icon="🤖",
@@ -154,6 +155,18 @@ st.markdown(
 )
 
 
+def create_retry_session(retries=3, backoff_factor=0.5):
+    session = requests.Session()
+    retry = Retry(
+        total=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=[429, 500, 502, 503, 504],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount("http://", adapter)
+    return session
+
+
 tab1, tab2 = st.tabs(["🤖 Text Generation", "📚 API Documentation"])
 
 with tab1:
@@ -162,7 +175,13 @@ with tab1:
         "TGI URL:", placeholder="http://localhost:8000/your-model/gpu0"
     )
     api_token = st.text_input("API Token:", type="password")
-    if base_url and api_token:
+    col1, col2, col3 = st.columns([1, 4, 1])
+    with col2:
+        connect_clicked = st.button("Connect 🔌", use_container_width=True)
+
+    if connect_clicked or (
+        base_url and api_token
+    ): 
         try:
             headers = {
                 "Authorization": f"Bearer {api_token}",
@@ -176,18 +195,17 @@ with tab1:
             )
             test_response.raise_for_status()
             st.success("✅ Connected to TGI server")
-            max_tokens = st.slider("Max New Tokens", 10, 1000, 200)
+            max_tokens = st.slider("Max New Tokens", 10, 1000, 100)
             temperature = st.slider("Temperature", 0.0, 2.0, 0.7)
             prompt = st.text_area(
                 "Enter your prompt:",
                 height=100,
                 value=st.session_state.get("prompt", ""),
             )
-
             col1, col2, col3 = st.columns([1, 4, 1])
             with col2:
                 if st.button("Generate 🚀", use_container_width=True) and prompt:
-                    with st.spinner('Generating response...'):
+                    with st.spinner("Generating response..."):
                         try:
                             session = create_retry_session()
                             response = session.post(
@@ -204,15 +222,21 @@ with tab1:
                             )
                             response.raise_for_status()
                             result = response.json()
-                            if not isinstance(result, list) or len(result) == 0 or "generated_text" not in result[0]:
-                                raise ValueError("Unexpected response format from the server")
-                            
+                            if (
+                                not isinstance(result, list)
+                                or len(result) == 0
+                                or "generated_text" not in result[0]
+                            ):
+                                raise ValueError(
+                                    "Unexpected response format from the server"
+                                )
                             st.markdown("---")
-                            st.markdown('<div class="generated-text">', unsafe_allow_html=True)
+                            st.markdown(
+                                '<div class="generated-text">', unsafe_allow_html=True
+                            )
                             full_text = result[0]["generated_text"]
                             st.markdown(full_text)
                             st.markdown("</div>", unsafe_allow_html=True)
-                            
                         except (requests.exceptions.RequestException, ValueError) as e:
                             st.error(f"Generation Error: {str(e)}")
         except requests.exceptions.RequestException as e:
@@ -225,21 +249,9 @@ with tab2:
     try:
         with open("API.md", "r") as f:
             api_docs = f.read()
-
         with st.container():
             st.markdown('<div class="api-docs">', unsafe_allow_html=True)
             st.markdown(api_docs)
             st.markdown("</div>", unsafe_allow_html=True)
     except FileNotFoundError:
         st.error("API documentation file (API.md) not found!")
-
-def create_retry_session(retries=3, backoff_factor=0.5):
-    session = requests.Session()
-    retry = Retry(
-        total=retries,
-        backoff_factor=backoff_factor,
-        status_forcelist=[429, 500, 502, 503, 504],
-    )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount('http://', adapter)
-    return session
