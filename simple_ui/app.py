@@ -146,9 +146,12 @@ def display_generation():
             messages = [{"role": "user", "content": prompt.strip()}]
             st.session_state.generated_response = st.session_state.client.generate_response(messages, max_tokens)
             st.session_state.generation_time = datetime.now()
-            
+        except Exception as e:
+            st.error(f"Generation error: {str(e)}")
+            return
+    
     # Display persistent output
-    if st.session_state.generated_response:
+    if hasattr(st.session_state, 'generated_response') and st.session_state.generated_response:
         st.markdown("### Generated Response:")
         st.markdown(f"*Generated at: {st.session_state.generation_time.strftime('%Y-%m-%d %H:%M:%S')}*")
         st.markdown("---")
@@ -160,6 +163,7 @@ def display_generation():
         - Temperature: {st.session_state.temperature}
         - Time: {st.session_state.generation_time.strftime('%Y-%m-%d %H:%M:%S')}
         """)
+
 
 def display_api_docs():
     st.title("📚 API Documentation")
