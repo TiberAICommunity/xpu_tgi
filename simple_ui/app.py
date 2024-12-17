@@ -229,6 +229,11 @@ def create_retry_session(retries=3, backoff_factor=0.5):
     return session
 
 
+def sanitize_prompt(prompt, max_length=200):
+    """Sanitize and limit prompt length."""
+    return prompt[:max_length] if len(prompt) > max_length else prompt
+
+
 tab1, tab2 = st.tabs(["🐙 Text Generation", "📚 API Documentation"])
 
 with tab1:
@@ -253,7 +258,7 @@ with tab1:
                 f"{base_url}/generate",
                 headers=headers,
                 json={"inputs": "test", "parameters": {"max_new_tokens": 1}},
-                timeout=10,
+                timeout=20,
             )
             test_response.raise_for_status()
             st.success("✅ Connected to TGI server")
@@ -263,7 +268,12 @@ with tab1:
                 "Enter your prompt:",
                 height=100,
                 value=st.session_state.get("prompt", ""),
+                help="Maximum 200 characters"
             )
+            if prompt:
+                prompt = sanitize_prompt(prompt)
+                if len(prompt) >= 201:
+                    st.warning("⚠️ Prompt has been truncated to 200 characters")
             col1, col2, col3 = st.columns([1, 4, 1])
             with col2:
                 if st.button("Generate 🚀", use_container_width=True) and prompt:
@@ -298,9 +308,7 @@ with tab1:
                                 <div class="generated-text">
                                     <pre>{}</pre>
                                 </div>
-                                """.format(
-                                    full_text
-                                ),
+                                """.format(full_text),
                                 unsafe_allow_html=True,
                             )
                         except (requests.exceptions.RequestException, ValueError) as e:
