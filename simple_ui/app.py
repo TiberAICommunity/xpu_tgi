@@ -278,10 +278,6 @@ def display_configuration():
             type="password" if not st.session_state.show_token else "default",
             placeholder="Enter your API token"
         )
-    with col2:
-        if st.button("👁️ Show/Hide", key="toggle_token"):
-            st.session_state.show_token = not st.session_state.show_token
-    
     if st.button("Test and Save Configuration", type="primary"):
         if not new_base_url or not new_token:
             st.error("Please provide both Base URL and API Token.")
@@ -319,11 +315,7 @@ def main():
             placeholder="Enter your API token"
         )
         
-        col1, col2 = st.columns([4, 1])
-        with col2:
-            if st.button("👁️ Show/Hide"):
-                st.session_state.show_token = not st.session_state.show_token
-        
+
         if st.button("Connect", type="primary"):
             if not new_base_url or not new_token:
                 st.error("Please provide both Base URL and API Token.")
@@ -339,7 +331,7 @@ def main():
                     st.session_state.is_configured = True
                     st.success("✅ Connection successful! Redirecting to main interface...")
                     time.sleep(1)  # Give user time to see the success message
-                    st.experimental_rerun()
+                    st.rerun()
         
         return
     
