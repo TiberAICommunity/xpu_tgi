@@ -1,9 +1,11 @@
 # TGI Service API Documentation
 
 ## Authentication
-Generate a token using the provided script:
+The authentication token is displayed in the console output when the service is first started. You should save this token for future use.
+
+If you need to retrieve the token later, you can get it from the running docker container:
 ```bash
-export VALID_TOKEN=$(./utils/generate_token.py)
+docker exec tgi_auth env | grep VALID_TOKEN
 ```
 
 All requests require Bearer token authentication:
@@ -20,13 +22,6 @@ Example:
 ```
 http://localhost:8000/hermes-2-pro-tgi/gpu0
 ```
-
-Available models:
-- hermes-2-pro-tgi
-- phi-3-mini-4k-tgi
-- codellama-7b-instruct-tgi
-- llava-v1.6-mistral-7b-tgi
-- flan-ul2-tgi
 
 ## API Endpoints
 
