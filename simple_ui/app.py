@@ -32,7 +32,7 @@ class TGIClient:
         }
         
         try:
-            response = requests.post(self.base_url, headers=self.headers, json=payload)
+            response = requests.post(f"{self.base_url}/generate", headers=self.headers, json=payload)
             response.raise_for_status()
             return response.json().get("generated_text", "No response text available")
         except Exception as e:
