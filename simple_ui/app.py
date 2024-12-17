@@ -17,29 +17,53 @@ class TGIClient:
         }
     
     def generate_response(self, messages: List[Dict[str, str]], max_tokens: int = 100) -> str:
-        # Format the conversation history
-        prompt = ""
-        for msg in messages:
+        # Format the conversation history - only include the last few messages
+        prompt = "<|system|>\nYou are a helpful AI assistant.\n<|end|>\n"
+        # Take last 4 messages to keep context manageable
+        for msg in messages[-4:]:
             role = msg["role"]
             content = msg["content"]
             prompt += f"<|{role}|>\n{content}<|end|>\n"
+        
+        prompt += "<|assistant|>\n"  # Add the assistant prefix for the response
             
         payload = {
             "inputs": prompt,
             "parameters": {
-                "max_new_tokens": max_tokens
+                "max_new_tokens": max_tokens,
+                "stream": True
             }
         }
         
         try:
-            response = requests.post(f"{self.base_url}/generate", headers=self.headers, json=payload)
-            response.raise_for_status()
-            
-            # Handle the response data correctly
-            response_data = response.json()
-            if isinstance(response_data, list) and len(response_data) > 0:
-                return response_data[0].get("generated_text", "No response text available")
-            return "No response text available"
+            with requests.post(
+                f"{self.base_url}/generate", 
+                headers=self.headers, 
+                json=payload, 
+                stream=True
+            ) as response:
+                response.raise_for_status()
+                
+                # Create a placeholder for streaming output
+                message_placeholder = st.empty()
+                full_response = ""
+                
+                # Stream the response
+                for line in response.iter_lines():
+                    if line:
+                        json_response = json.loads(line)
+                        if isinstance(json_response, list) and len(json_response) > 0:
+                            chunk = json_response[0].get("generated_text", "")
+                            # Clean up the chunk by removing any message markers
+                            chunk = chunk.replace("<|assistant|>", "").replace("<|end|>", "").strip()
+                            full_response += chunk
+                            # Update the placeholder with the accumulated response
+                            message_placeholder.markdown(full_response + "▌")
+                
+                # Final update without the cursor
+                message_placeholder.markdown(full_response)
+                return full_response
+                
         except Exception as e:
             return f"Error: {str(e)}"
 
@@ -52,32 +76,37 @@ def initialize_session_state():
 def display_chat():
     st.title("Chat Interface")
     
-    # Create a container for chat messages with a fixed height
     chat_container = st.container()
-    
-    # Create a container for the input at the bottom
     input_container = st.container()
     
-    # Handle input first (at the bottom)
     with input_container:
         prompt = st.chat_input("What would you like to know?")
         
-    # Display chat messages in the container above
     with chat_container:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
-                st.write(message["content"])
+                # Clean up the message content by removing any markers
+                content = message["content"]
+                content = (content.replace("<|user|>", "")
+                         .replace("<|assistant|>", "")
+                         .replace("<|end|>", "")
+                         .replace("<|system|>", "")
+                         .strip())
+                st.markdown(content)
     
-    # Handle the response after input
     if prompt:
+        # Add user message to state
         st.session_state.messages.append({"role": "user", "content": prompt})
+        
         with chat_container:
+            # Display user message
             with st.chat_message("user"):
-                st.write(prompt)
+                st.markdown(prompt)
             
+            # Display assistant response
             with st.chat_message("assistant"):
                 response = st.session_state.client.generate_response(st.session_state.messages)
-                st.write(response)
+                # Add assistant response to state
                 st.session_state.messages.append({"role": "assistant", "content": response})
 
 def display_api_docs():
