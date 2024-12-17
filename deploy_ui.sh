@@ -111,7 +111,7 @@ while [ $attempt -le $max_attempts ]; do
         -H "Authorization: Bearer $VALID_TOKEN" \
         -H "Content-Type: application/json" \
         -d '{"inputs":"Hi","parameters":{"max_new_tokens":1}}' \
-        "http://localhost:8000/${TGI_MODEL_NAME}/gpu0/generate")
+        "http://localhost:8000/${MODEL_NAME}/gpu0/generate")
 
     if echo "$test_response" | grep -q "generated_text"; then
         kill $LOADING_PID 2>/dev/null
