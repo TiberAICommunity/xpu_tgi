@@ -309,10 +309,9 @@ with tab1:
         st.info("👆 Enter your TGI URL and API token to start generating text")
 
 with tab2:
-    st.title("📚 API Documentation")
     try:
         with open("API.md", "r") as f:
-            api_docs = f.read()
+            api_docs = f.read().strip()
         with st.container():
             st.markdown('<div class="api-docs">', unsafe_allow_html=True)
             st.markdown(api_docs)

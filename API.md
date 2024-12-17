@@ -1,3 +1,5 @@
+# 📚 API Documentation
+
 ## Authentication
 The authentication token is displayed in the console output when the service is first started. You should save this token for future use.
 
