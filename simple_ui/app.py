@@ -233,14 +233,16 @@ tab1, tab2 = st.tabs(["🐙 Text Generation", "📚 API Documentation"])
 
 with tab1:
     st.title("🐙 LLM Text generation Demo on Intel XPUs")
-    base_url = st.text_input(
+    input_url = st.text_input(
         "TGI URL:", placeholder="http://localhost:8000/your-model/gpu0"
     )
+    base_url = input_url.rstrip('/generate').rstrip('/')
+    if input_url and input_url != base_url:
+        st.info("ℹ️ Detected '/generate' in the URL. Using the base URL instead: " + base_url)
     api_token = st.text_input("API Token:", type="password")
     col1, col2, col3 = st.columns([1, 4, 1])
     with col2:
         connect_clicked = st.button("Connect 🔗", use_container_width=True)
-
     if connect_clicked or (base_url and api_token):
         try:
             headers = {
