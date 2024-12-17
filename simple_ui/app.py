@@ -65,7 +65,7 @@ class TGIClient:
                                 chunk = chunk.split("<|user|>")[0]
                             
                             chunk = chunk.strip()
-                            if chunk:  # Only update if there's new content
+                            if chunk and chunk != full_response:  # Only update if there's new content
                                 full_response = chunk
                                 message_placeholder.markdown(full_response + "▌")
                 
@@ -81,35 +81,41 @@ def initialize_session_state():
     if "client" not in st.session_state:
         st.session_state.client = TGIClient(BASE_URL, VALID_TOKEN)
 
-def display_chat():
-    st.title("Chat Interface")
+def display_generation():
+    st.title("Text Generation Interface")
     
-    chat_container = st.container()
+    # Create containers for input and output
     input_container = st.container()
+    output_container = st.container()
     
     with input_container:
-        prompt = st.chat_input("What would you like to know?")
-        
-    with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                # Only display the content, no formatting needed since we clean it during generation
-                st.markdown(message["content"])
-    
-    if prompt:
-        # Add user message to state
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        
-        with chat_container:
-            # Display user message
-            with st.chat_message("user"):
-                st.markdown(prompt)
-            
-            # Display assistant response
-            with st.chat_message("assistant"):
-                response = st.session_state.client.generate_response(st.session_state.messages)
-                # Add assistant response to state
-                st.session_state.messages.append({"role": "assistant", "content": response})
+        prompt = st.text_area("Enter your prompt:", height=150)
+        col1, col2 = st.columns(2)
+        with col1:
+            max_tokens = st.slider("Max tokens:", min_value=10, max_value=500, value=100)
+        with col2:
+            if st.button("Generate", type="primary"):
+                if prompt:
+                    # Create messages list with the single prompt
+                    messages = [{"role": "user", "content": prompt}]
+                    
+                    # Clear previous output and show new response
+                    with output_container:
+                        st.markdown("---")
+                        st.markdown("### Generated Response:")
+                        response = st.session_state.client.generate_response(messages, max_tokens)
+                        
+                        # Add copy button after generation is complete
+                        col1, col2 = st.columns([4, 1])
+                        with col1:
+                            st.markdown(response)
+                        with col2:
+                            st.button("📋 Copy", 
+                                     key="copy_button",
+                                     on_click=lambda: st.write(
+                                         f'<script>navigator.clipboard.writeText("{response}");</script>', 
+                                         unsafe_allow_html=True
+                                     ))
 
 def display_api_docs():
     st.title("API Documentation")
@@ -146,10 +152,10 @@ def display_authentication():
 def main():
     initialize_session_state()
     
-    tab1, tab2, tab3 = st.tabs(["Chat", "API Docs", "Authentication"])
+    tab1, tab2, tab3 = st.tabs(["Text Generation", "API Docs", "Authentication"])
     
     with tab1:
-        display_chat()
+        display_generation()
     with tab2:
         display_api_docs()
     with tab3:
