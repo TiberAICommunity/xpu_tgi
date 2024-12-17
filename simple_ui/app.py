@@ -1,7 +1,7 @@
 import streamlit as st
 import requests
-import time
-import threading
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util.retry import Retry
 
 st.set_page_config(
     page_title="LLM Text generation Demo on Intel XPUs",
@@ -40,13 +40,14 @@ st.markdown(
     
     /* Buttons */
     .stButton > button {
-        width: 100%;
-        padding: 0.5rem 1rem;
+        width: auto !important;
+        padding: 0.5rem 2rem;
         font-size: 1.1rem;
         font-weight: 600;
         border-radius: 8px;
         transition: all 0.3s ease;
-        min-width: 200px;
+        min-width: 150px;
+        max-width: 300px;
         display: inline-block;
         background-color: #FF69B4 !important;
         color: white !important;
@@ -57,6 +58,7 @@ st.markdown(
         transform: translateY(-2px);
         box-shadow: 0 4px 12px rgba(255,105,180,0.3);
         background-color: #FF1493 !important; 
+    }
     
     /* Sample prompts */
     .sample-prompt {
@@ -143,6 +145,8 @@ st.markdown(
     .stButton {
         text-align: center;
         margin: 2rem 0;
+        display: flex;
+        justify-content: center;
     }
 </style>
 """,
@@ -185,7 +189,8 @@ with tab1:
                 if st.button("Generate 🚀", use_container_width=True) and prompt:
                     with st.spinner('Generating response...'):
                         try:
-                            response = requests.post(
+                            session = create_retry_session()
+                            response = session.post(
                                 f"{base_url}/generate",
                                 headers=headers,
                                 json={
@@ -227,3 +232,14 @@ with tab2:
             st.markdown("</div>", unsafe_allow_html=True)
     except FileNotFoundError:
         st.error("API documentation file (API.md) not found!")
+
+def create_retry_session(retries=3, backoff_factor=0.5):
+    session = requests.Session()
+    retry = Retry(
+        total=retries,
+        backoff_factor=backoff_factor,
+        status_forcelist=[429, 500, 502, 503, 504],
+    )
+    adapter = HTTPAdapter(max_retries=retry)
+    session.mount('http://', adapter)
+    return session
