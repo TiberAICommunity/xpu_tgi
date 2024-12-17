@@ -6,6 +6,7 @@ import re
 import time
 from pathlib import Path
 from typing import Optional
+from io import BytesIO
 
 import requests
 import streamlit as st
@@ -35,57 +36,57 @@ class APIClient:
         self.session = requests.Session()
         
         # Get model configuration from environment
-        self.model_name = os.getenv("TGI_MODEL_NAME", "unknown-model")
+        self.model_name = os.getenv("MODEL_NAME", "unknown-model")
+        self.model_type = os.getenv("MODEL_TYPE", "TGI_LLM")  # Default to LLM if not specified
         
-        # Auto-detect model type if not explicitly set
-        self.model_type = os.getenv("TGI_MODEL_TYPE")
-        if not self.model_type:
-            # List of known VLM model identifiers
-            vlm_identifiers = [
-                "llava", "bridge-tower", "cogvlm", "visualglm",
-                "minigpt4", "qwen-vl", "bakllava", "multimodal"
-            ]
-            # Check if model name contains any VLM identifiers
-            if any(id in self.model_name.lower() for id in vlm_identifiers):
-                self.model_type = "TGI_VLM"
-            else:
-                self.model_type = "TGI_LLM"
-        
-        # Get model limits from environment (set by model.env)
+        # Get model limits from environment
         self.max_context_length = int(os.getenv("MAX_TOTAL_TOKENS", "1024"))
         self.max_input_length = int(os.getenv("MAX_INPUT_LENGTH", "512"))
         self.gpu_id = 0
-        self.approximate_token_length = 4
 
-    def get_model_context_length(self) -> int:
-        """Get the model's maximum context length from info endpoint."""
-        if not self.model_name:
-            info = get_model_info(self.config)
-            self.model_name = info.get("model_id", "").split("/")[-1]
-            self.max_context_length = info.get("max_sequence_length", 1024)
-        return self.max_context_length
+    def format_llm_prompt(self, prompt: str, messages: list = None) -> str:
+        """Format prompt for LLM models (e.g., Phi-3)"""
+        system_msg = "<|system|>\nYou are a helpful assistant.<|end|>\n"
+        if messages:
+            chat_history = ""
+            for msg in messages:
+                role = "user" if msg["role"] == "user" else "assistant"
+                chat_history += f"<|{role}|>\n{msg['content']}<|end|>\n"
+            return f"{system_msg}{chat_history}<|user|>\n{prompt}<|end|>\n<|assistant|>"
+        return f"{system_msg}<|user|>\n{prompt}<|end|>\n<|assistant|>"
 
-    def format_chat_history(self, messages: list, current_prompt: str) -> str:
-        """Format chat history for the model while respecting context length."""
-        max_length = self.max_context_length
-        reserve_tokens = 500
-        formatted_messages = []
-        current_length = 0
-        prompt_msg = f"Human: {current_prompt}\nAssistant:"
-        current_length += len(prompt_msg.split()) * self.approximate_token_length
+    def format_vlm_prompt(self, prompt: str, image_data: str = None, messages: list = None) -> str:
+        """Format prompt for VLM models (e.g., LLaVA)"""
+        system_msg = "<|im_start|>system\nAnswer the questions.<|im_end|>"
+        if messages:
+            chat_history = ""
+            for msg in messages:
+                role = "user" if msg["role"] == "user" else "assistant"
+                content = msg["content"]
+                if "image" in msg and role == "user":
+                    content = f"![Image](data:image/jpeg;base64,{msg['image']})\n{content}"
+                chat_history += f"<|im_start|>{role}\n{content}<|im_end|>\n"
+            
+            if image_data:
+                prompt = f"![Image](data:image/jpeg;base64,{image_data})\n{prompt}"
+            return f"{system_msg}\n{chat_history}<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
         
-        for msg in reversed(messages):
-            role = msg["role"]
-            content = msg["content"]
-            formatted_msg = f"{role.title()}: {content}"
-            msg_tokens = len(formatted_msg.split()) * self.approximate_token_length
-            if current_length + msg_tokens > (max_length - reserve_tokens):
-                break
-            formatted_messages.insert(0, formatted_msg)
-            current_length += msg_tokens
-        
-        formatted_messages.append(prompt_msg)
-        return "\n".join(formatted_messages)
+        if image_data:
+            prompt = f"![Image](data:image/jpeg;base64,{image_data})\n{prompt}"
+        return f"{system_msg}\n<|im_start|>user\n{prompt}<|im_end|>\n<|im_start|>assistant\n"
+
+    def preprocess_image(self, image: Image.Image) -> str:
+        """Preprocess image for VLM models"""
+        max_size = 200  # Reduce maximum size for smaller Base64 string
+        ratio = min(max_size / image.size[0], max_size / image.size[1])
+        new_size = tuple([int(x * ratio) for x in image.size])
+        image = image.resize(new_size, Image.Resampling.LANCZOS)
+        image = image.convert('RGB')
+
+        # Convert to base64
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG", quality=50)
+        return base64.b64encode(buffer.getvalue()).decode('utf-8')
 
     def make_request(
         self,
@@ -99,36 +100,25 @@ class APIClient:
             raise ValueError("Rate limit exceeded")
 
         try:
-            if not self.model_name:
-                info = get_model_info(self.config)
-                self.model_name = info.get("model_id", "").split("/")[-1]
             url = f"{self.config.base_url}/{self.model_name}/gpu{self.gpu_id}/generate"
-            if messages:
-                formatted_input = self.format_chat_history(messages, prompt)
+            
+            # Format input based on model type
+            if self.model_type == "TGI_VLM":
+                formatted_input = self.format_vlm_prompt(prompt, image_data, messages)
             else:
-                formatted_input = f"Human: {prompt}\nAssistant:"
-            if image_data:
-                inputs = f"<image>{image_data}</image>\n{formatted_input}"
-            else:
-                inputs = formatted_input
-            validated_params = {
-                "max_new_tokens": min(
-                    max(1, parameters.get("max_new_tokens", 150)), 500
-                ),
-                "temperature": min(max(0.0, parameters.get("temperature", 0.7)), 1.0),
-                "top_p": min(max(0.0, parameters.get("top_p", 0.95)), 1.0),
-                "top_k": min(max(1, parameters.get("top_k", 50)), 100),
-                "repetition_penalty": min(
-                    max(1.0, parameters.get("repetition_penalty", 1.1)), 2.0
-                ),
-                "do_sample": True,
-                "details": True,
-            }
+                formatted_input = self.format_llm_prompt(prompt, messages)
+
             payload = {
-                "inputs": inputs,
-                "parameters": validated_params,
-                "stream": False,
+                "inputs": formatted_input,
+                "parameters": {
+                    "max_new_tokens": min(max(1, parameters.get("max_new_tokens", 150)), 500),
+                    "temperature": min(max(0.0, parameters.get("temperature", 0.7)), 1.0),
+                    "top_p": min(max(0.0, parameters.get("top_p", 0.95)), 1.0),
+                    "top_k": min(max(1, parameters.get("top_k", 50)), 100),
+                    "repetition_penalty": min(max(1.0, parameters.get("repetition_penalty", 1.1)), 2.0)
+                }
             }
+            
             response = self.session.post(
                 url=url,
                 headers={

@@ -22,30 +22,22 @@ MODELS_DIR="${SCRIPT_DIR}/models"
 # -----------------------------
 cleanup() {
     local exit_code=$?
-
-    # Only clean up if there was an error or interruption
     if [ $exit_code -ne 0 ]; then
         echo -e "\n\nCleaning up after error/interruption..."
-
-        # Only clean up if we created a new container in this run
         if [ -n "${NEW_CONTAINER_CREATED:-}" ] && [ -n "${SERVICE_NAME:-}" ]; then
             local container_exists
             container_exists=$(docker ps -a --format '{{.Names}}' | grep -q "^${SERVICE_NAME}$" && echo "yes" || echo "no")
-
             if [ "${container_exists}" = "yes" ]; then
                 echo "Stopping and removing container ${SERVICE_NAME}..."
                 docker stop "${SERVICE_NAME}" 2>/dev/null || true
                 docker rm "${SERVICE_NAME}" 2>/dev/null || true
             fi
         fi
-
         echo -e "\n\033[1;31m✗ Script failed or was interrupted. Cleanup completed.\033[0m"
     fi
 
     exit $exit_code
 }
-
-# Add trap for cleanup
 trap cleanup INT TERM EXIT
 
 # -----------------------------
@@ -75,22 +67,15 @@ validate_args() {
     fi
 
     local input_name="$1"
-
-    # Find the actual model directory name (case-insensitive)
     if [ ! -d "${MODELS_DIR}" ]; then
         error "Models directory not found: ${MODELS_DIR}"
     fi
-
-    # Use find to locate the directory case-insensitively
     local found_model
     found_model=$(find "${MODELS_DIR}" -maxdepth 1 -type d -iname "${input_name}" -printf "%f\n" 2>/dev/null)
-
     if [ -z "${found_model}" ]; then
         error "Model directory not found: ${input_name}\nAvailable models:"
         ls -1 "${MODELS_DIR}" 2>/dev/null || echo "No models found in ${MODELS_DIR}"
     fi
-
-    # Use the actual directory name (preserving original case)
     MODEL_NAME="${found_model}"
     MODEL_DIR="${MODELS_DIR}/${MODEL_NAME}"
 
@@ -104,13 +89,10 @@ validate_args() {
 
 validate_base_services() {
     info "Validating base services"
-
-    # Check both services with health status
     for service in "tgi_proxy" "tgi_auth"; do
         if ! docker ps -q -f "name=${service}" >/dev/null 2>&1; then
             error "${service} service not running. Please run start_base.sh first"
         fi
-
         local health_status
         health_status=$(docker inspect --format='{{.State.Health.Status}}' "${service}" 2>/dev/null || echo "unknown")
         if [ "${health_status}" != "healthy" ]; then
@@ -131,7 +113,6 @@ validate_gpu() {
     local gpu_count
     gpu_count=$("${SCRIPT_DIR}/utils/gpu_info.py" count)
     #echo "Debug: Found ${gpu_count} GPUs (0 to $((gpu_count-1)))"
-
     if [ "${gpu_count}" -eq 0 ]; then
         error "No Intel GPUs found. Please ensure Intel GPU drivers are installed and GPUs are available."
     fi
@@ -148,7 +129,6 @@ validate_gpu() {
         fi
     done < <(docker ps --format '{{.Names}}' | grep "tgi_" | grep -v "tgi_proxy\|tgi_auth")
     #echo "Debug: GPUs in use: ${used_gpus#,}"
-
     local available_gpu=""
     for gpu in "${ALL_GPUS[@]}"; do
         if [ "${gpu}" -lt "${gpu_count}" ]; then # Ensure GPU number is valid
@@ -162,7 +142,6 @@ validate_gpu() {
     if [ -z "${available_gpu}" ]; then
         error "No available GPUs found. All devices (0 to $((gpu_count - 1))) are in use.\nTry stopping an existing model with: ./service_cleanup.sh --gpu <N>"
     fi
-
     export GPU_NUM="${available_gpu}"
     #echo "Debug [validate_gpu]: Setting GPU_NUM=${GPU_NUM}"
     info "Selected GPU number: ${GPU_NUM}"
@@ -244,11 +223,9 @@ start_model_service() {
 
 wait_for_model_service() {
     info "Waiting for model service to be healthy"
-
     local max_attempts=300 # 5 minutes (300 seconds)
     local attempt=1
     local last_log=""
-
     while [ $attempt -le $max_attempts ]; do
         local health_status
         health_status=$(docker inspect --format='{{.State.Status}}' "${SERVICE_NAME}" 2>/dev/null || echo "not_found")

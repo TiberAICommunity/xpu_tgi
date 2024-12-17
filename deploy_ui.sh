@@ -11,7 +11,34 @@ set -e
 echo "🎉🎉 Starting a demo UI for the chat service...🎉🎉"
 
 # ------------------------------------------------------------------------------
-# Check Dependencies and Environment
+# Check Arguments and Model Config
+# ------------------------------------------------------------------------------
+if [ $# -ne 1 ]; then
+    echo "❌ Usage: $0 <model_name>"
+    echo "Available models:"
+    ls -1 models/
+    exit 1
+fi
+
+MODEL_NAME=$1
+MODEL_CONFIG="models/${MODEL_NAME}/config/model.env"
+
+if [ ! -f "$MODEL_CONFIG" ]; then
+    echo "❌ Error: Model configuration not found: $MODEL_CONFIG"
+    echo "Available models:"
+    ls -1 models/
+    exit 1
+fi
+
+# Load model configuration
+source "$MODEL_CONFIG"
+echo "📚 Loaded model configuration for: $MODEL_NAME"
+echo "🤖 Model ID: $MODEL_ID"
+echo "📝 Model type: ${MODEL_TYPE:-TGI_LLM}"
+echo "📊 Max tokens: ${MAX_TOTAL_TOKENS:-1024}"
+
+# ------------------------------------------------------------------------------
+# Check Auth Token
 # ------------------------------------------------------------------------------
 if [ ! -f ".auth_token.env" ] && [ -z "${VALID_TOKEN}" ]; then
     echo "❌ Error: No authentication token found!"
@@ -19,14 +46,16 @@ if [ ! -f ".auth_token.env" ] && [ -z "${VALID_TOKEN}" ]; then
     echo "  1. Run the TGI service first to create .auth_token.env"
     echo "  2. Set the VALID_TOKEN environment variable"
     exit 1
-elif [ -f ".auth_token.env" ]; then
-    source .auth_token.env
 fi
 
-if [ ! -d "simple_ui" ]; then
-    echo "❌ Error: simple_ui directory not found"
-    exit 1
-fi
+[ -f ".auth_token.env" ] && source .auth_token.env
+
+# Export model info for UI
+export MODEL_NAME
+export MODEL_ID
+export MODEL_TYPE
+export MAX_TOTAL_TOKENS
+export MAX_INPUT_LENGTH
 
 # ------------------------------------------------------------------------------
 # Loading Animation Function
@@ -54,11 +83,14 @@ LOADING_PID=$!
 trap 'kill $LOADING_PID 2>/dev/null; exit' INT TERM EXIT
 
 while [ $attempt -le $max_attempts ]; do
-    health_response=$(curl -s -H "Authorization: Bearer $VALID_TOKEN" http://localhost:8000/health)
-    info_response=$(curl -s -H "Authorization: Bearer $VALID_TOKEN" http://localhost:8000/info)
+    # Test the generate endpoint with a minimal request
+    test_response=$(curl -s -X POST \
+        -H "Authorization: Bearer $VALID_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"inputs":"Hi","parameters":{"max_new_tokens":1}}' \
+        "http://localhost:8000/${TGI_MODEL_NAME}/gpu0/generate")
 
-    if echo "$health_response" | grep -q "healthy" &&
-        echo "$info_response" | grep -q "model_name"; then
+    if echo "$test_response" | grep -q "generated_text"; then
         kill $LOADING_PID 2>/dev/null
         echo -e "\n✨ Model service is ready!"
         break
@@ -67,8 +99,7 @@ while [ $attempt -le $max_attempts ]; do
             kill $LOADING_PID 2>/dev/null
             echo -e "\n❌ Timeout waiting for model service to be ready"
             echo "Please ensure the model service is properly started"
-            echo "Health Response: $health_response"
-            echo "Info Response: $info_response"
+            echo "Test Response: $test_response"
             exit 1
         fi
         sleep 2
@@ -136,37 +167,3 @@ else
     trap 'kill $UI_PID 2>/dev/null || true' EXIT INT TERM
     wait $UI_PID
 fi
-
-# First check for auth token
-if [ ! -f ".auth_token.env" ] && [ -z "${VALID_TOKEN}" ]; then
-    echo "❌ Error: No authentication token found!"
-    echo "Please either:"
-    echo "  1. Run the TGI service first to create .auth_token.env"
-    echo "  2. Set the VALID_TOKEN environment variable"
-    exit 1
-fi
-
-# Source auth token if exists
-[ -f ".auth_token.env" ] && source .auth_token.env
-
-# Get model name from config or use default
-if [ -f ".model_config" ]; then
-    source .model_config
-    echo "📚 Found model configuration"
-    
-    # Load model-specific environment if available
-    if [ -f ".model_env/${TGI_MODEL_NAME}.env" ]; then
-        source ".model_env/${TGI_MODEL_NAME}.env"
-        echo "🔧 Loaded model-specific configuration"
-    else
-        echo "⚠️  No model-specific configuration found, using defaults"
-    fi
-else
-    echo "⚠️  No model configuration found, using defaults"
-    export TGI_MODEL_NAME="unknown-model"
-    export MAX_TOTAL_TOKENS=1024
-    export MAX_INPUT_LENGTH=512
-fi
-
-echo "🤖 Using model: $TGI_MODEL_NAME"
-echo "📝 Max tokens: $MAX_TOTAL_TOKENS"
