@@ -235,9 +235,16 @@ def main():
                 with st.chat_message("assistant"):
                     message_placeholder = st.empty()
                     try:
+                        params = get_default_params()
+                        params["temperature"] = st.session_state.get("temperature", 0.7)
+                        params["max_new_tokens"] = st.session_state.get("max_new_tokens", 150)
+                        params["top_p"] = st.session_state.get("top_p", 0.95)
+                        params["top_k"] = st.session_state.get("top_k", 50)
+                        params["repetition_penalty"] = st.session_state.get("repetition_penalty", 1.1)
+
                         response = config.api_client.make_stream_request(
                             prompt,
-                            get_default_params(),
+                            params,
                             messages=st.session_state.messages[:-1]
                         )
                         
