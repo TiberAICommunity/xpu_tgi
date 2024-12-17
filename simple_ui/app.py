@@ -2,6 +2,9 @@ import streamlit as st
 import requests
 import time
 
+# Page config must be the first Streamlit command
+st.set_page_config(page_title="LLM Text generation Demo on Intel XPUs", page_icon="🤖",)# layout="wide")
+
 # Custom CSS
 st.markdown("""
 <style>
@@ -93,9 +96,6 @@ st.markdown("""
     }
 </style>
 """, unsafe_allow_html=True)
-
-# Page config
-st.set_page_config(page_title="TGI Demo", page_icon="🤖", layout="wide")
 
 # Sample prompts
 SAMPLE_PROMPTS = [
