@@ -121,12 +121,12 @@ mkdir -p "${HF_CACHE_DIR}"
 echo -e "${GREEN}Generating secure token...${NC}"
 export VALID_TOKEN=$(python3 -c "from utils.generate_token import generate_and_set; print(generate_and_set())")
 
-# Create .auth_token.env file
-echo "export VALID_TOKEN=${VALID_TOKEN}" > .auth_token.env
-chmod 600 .auth_token.env
-source .auth_token.env
+# Create .auth_token_tgi_tgi.env file
+echo "export VALID_TOKEN=${VALID_TOKEN}" > .auth_token_tgi_tgi.env
+chmod 600 .auth_token_tgi_tgi.env
+source .auth_token_tgi_tgi.env
 
-echo -e "${GREEN}Token saved to .auth_token.env${NC}"
+echo -e "${GREEN}Token saved to .auth_token_tgi_tgi.env${NC}"
 
 echo -e "${GREEN}Starting deployment...${NC}"
 if ! ./deploy.sh "${MODEL_NAME}"; then
