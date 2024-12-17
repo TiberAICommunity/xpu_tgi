@@ -23,7 +23,7 @@ class TGIClient:
         for msg in messages[-4:]:
             role = msg["role"]
             content = msg["content"]
-            prompt += f"<|{role}|>\n{content}<|end|>\n"
+            prompt += f"<|{role}|>\n{content}\n<|end|>\n"
         
         prompt += "<|assistant|>\n"  # Add the assistant prefix for the response
             
@@ -54,11 +54,16 @@ class TGIClient:
                         json_response = json.loads(line)
                         if isinstance(json_response, list) and len(json_response) > 0:
                             chunk = json_response[0].get("generated_text", "")
-                            # Clean up the chunk by removing any message markers
-                            chunk = chunk.replace("<|assistant|>", "").replace("<|end|>", "").strip()
-                            full_response += chunk
-                            # Update the placeholder with the accumulated response
-                            message_placeholder.markdown(full_response + "▌")
+                            # Clean up the chunk by removing any message markers and the original prompt
+                            chunk = (chunk.replace(prompt, "")
+                                   .replace("<|assistant|>", "")
+                                   .replace("<|end|>", "")
+                                   .replace("<|system|>", "")
+                                   .strip())
+                            if chunk:  # Only update if there's new content
+                                full_response = chunk
+                                # Update the placeholder with the accumulated response
+                                message_placeholder.markdown(full_response + "▌")
                 
                 # Final update without the cursor
                 message_placeholder.markdown(full_response)
@@ -85,14 +90,8 @@ def display_chat():
     with chat_container:
         for message in st.session_state.messages:
             with st.chat_message(message["role"]):
-                # Clean up the message content by removing any markers
-                content = message["content"]
-                content = (content.replace("<|user|>", "")
-                         .replace("<|assistant|>", "")
-                         .replace("<|end|>", "")
-                         .replace("<|system|>", "")
-                         .strip())
-                st.markdown(content)
+                # Only display the content, no formatting needed since we clean it during generation
+                st.markdown(message["content"])
     
     if prompt:
         # Add user message to state
