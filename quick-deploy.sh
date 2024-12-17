@@ -17,8 +17,65 @@ setup_dependencies() {
         if sudo apt-get update && sudo apt-get install -y jq; then
             echo "jq installed successfully"
         else
-            echo "Could not install jq. Using container fallback..."
-            alias jq='docker run --rm -i ghcr.io/jqlang/jq:latest'
+            echo "Could not install jq. Using Python fallback..."
+            cat > "utils/pyjq.py" << 'EOF'
+#!/usr/bin/env python3
+import json
+import sys
+import argparse
+
+def process_json(data, query):
+    """Process JSON data with a jq-like query."""
+    try:
+        if isinstance(data, str):
+            data = json.loads(data)
+        if query == '.':
+            return data
+        elif query.startswith('.'):
+            keys = query[1:].split('.')
+            result = data
+            for key in keys:
+                if key:  # Skip empty keys from double dots
+                    result = result[key]
+            return result
+        elif query == 'keys':
+            return list(data.keys())
+        elif query == 'length':
+            return len(data)
+        else:
+            return data
+    except Exception as e:
+        print(f"Error processing JSON: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description='Python-based jq alternative')
+    parser.add_argument('query', nargs='?', default='.')
+    parser.add_argument('-r', '--raw-output', action='store_true', 
+                       help='Output raw strings without quotes')
+    args = parser.parse_args()
+    try:
+        input_data = sys.stdin.read().strip()
+        if not input_data:
+            sys.exit(0)
+        result = process_json(input_data, args.query)
+        if args.raw_output and isinstance(result, str):
+            print(result)
+        else:
+            print(json.dumps(result, indent=2))
+            
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
+EOF
+            chmod +x "utils/pyjq.py"
+            jq() {
+                "./utils/pyjq.py" "$@"
+            }
+            export -f jq
         fi
     fi
 }

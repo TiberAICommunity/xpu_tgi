@@ -29,8 +29,9 @@ error() {
     exit 1
 }
 warning() { echo -e "\n\033[1;33m! $1\033[0m"; }
+
 setup_jq() {
-    info "Setting up JQ wrapper"
+    info "Setting up JSON processor"
     if command -v jq >/dev/null 2>&1; then
         success "Native jq found, using system installation"
         return 0
@@ -42,21 +43,66 @@ setup_jq() {
         return 0
     fi
 
-    warning "Could not install native jq. Falling back to container version..."
-    info "Pulling official jq image"
-    if ! docker pull ghcr.io/jqlang/jq:latest >/dev/null 2>&1; then
-        error "Failed to pull jq Docker image"
-    fi
+    warning "Could not install jq. Attempting to use Python fallback..."
+    cat > "${SCRIPT_DIR}/utils/pyjq.py" << 'EOF'
+#!/usr/bin/env python3
+import json
+import sys
+import argparse
 
+def process_json(data, query):
+    """Process JSON data with a jq-like query."""
+    try:
+        if isinstance(data, str):
+            data = json.loads(data)
+        if query == '.':
+            return data
+        elif query.startswith('.'):
+            keys = query[1:].split('.')
+            result = data
+            for key in keys:
+                if key:  # Skip empty keys from double dots
+                    result = result[key]
+            return result
+        elif query == 'keys':
+            return list(data.keys())
+        elif query == 'length':
+            return len(data)
+        else:
+            return data
+    except Exception as e:
+        print(f"Error processing JSON: {e}", file=sys.stderr)
+        sys.exit(1)
+
+def main():
+    parser = argparse.ArgumentParser(description='Python-based jq alternative')
+    parser.add_argument('query', nargs='?', default='.')
+    parser.add_argument('-r', '--raw-output', action='store_true', 
+                       help='Output raw strings without quotes')
+    args = parser.parse_args()
+
+    try:
+        input_data = sys.stdin.read().strip()
+        if not input_data:
+            sys.exit(0)
+        result = process_json(input_data, args.query)
+        if args.raw_output and isinstance(result, str):
+            print(result)
+        else:
+            print(json.dumps(result, indent=2))
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == '__main__':
+    main()
+EOF
+
+    chmod +x "${SCRIPT_DIR}/utils/pyjq.py"
     jq() {
-        docker run --rm -i ghcr.io/jqlang/jq:latest "$@"
+        "${SCRIPT_DIR}/utils/pyjq.py" "$@"
     }
     export -f jq
-    if echo '{"test": "ok"}' | jq -r .test >/dev/null 2>&1; then
-        success "Docker-based jq wrapper configured successfully"
-    else
-        error "Failed to setup jq wrapper"
-    fi
 }
 
 # -----------------------------
