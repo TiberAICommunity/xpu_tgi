@@ -6,7 +6,8 @@ from requests.packages.urllib3.util.retry import Retry
 
 st.set_page_config(
     page_title="LLM Text generation Demo on Intel XPUs",
-    page_icon="🤖",
+    page_icon="🐙",
+    layout="wide"
 )
 st.markdown(
     """
@@ -75,7 +76,9 @@ st.markdown(
         padding: 2rem;
         border-radius: 10px;
         margin: 2rem auto;
-        max-width: 900px;
+        width: 90vw;
+        max-width: 1200px;
+        min-width: 300px;
         line-height: 1.6;
     }
     
@@ -167,17 +170,17 @@ def create_retry_session(retries=3, backoff_factor=0.5):
     return session
 
 
-tab1, tab2 = st.tabs(["🤖 Text Generation", "📚 API Documentation"])
+tab1, tab2 = st.tabs(["🐙 Text Generation", "📚 API Documentation"])
 
 with tab1:
-    st.title("🤖 LLM Text generation Demo on Intel XPUs")
+    st.title("🐙 LLM Text generation Demo on Intel XPUs")
     base_url = st.text_input(
         "TGI URL:", placeholder="http://localhost:8000/your-model/gpu0"
     )
     api_token = st.text_input("API Token:", type="password")
     col1, col2, col3 = st.columns([1, 4, 1])
     with col2:
-        connect_clicked = st.button("Connect 🔌", use_container_width=True)
+        connect_clicked = st.button("Connect 🔗", use_container_width=True)
 
     if connect_clicked or (
         base_url and api_token
