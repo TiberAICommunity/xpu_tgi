@@ -12,6 +12,8 @@ import requests
 import streamlit as st
 from PIL import Image
 
+import logging
+
 
 class RateLimit:
     def __init__(self):
@@ -43,6 +45,17 @@ class APIClient:
         self.max_context_length = int(os.getenv("MAX_TOTAL_TOKENS", "1024"))
         self.max_input_length = int(os.getenv("MAX_INPUT_LENGTH", "512"))
         self.gpu_id = 0 #  default
+
+        # Add logging setup
+        self.logger = logging.getLogger('APIClient')
+        self.logger.setLevel(logging.DEBUG)
+        
+        # Add file handler
+        fh = logging.FileHandler('api_client.log')
+        fh.setLevel(logging.DEBUG)
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        fh.setFormatter(formatter)
+        self.logger.addHandler(fh)
 
     def format_llm_prompt(self, prompt: str, messages: list = None) -> str:
         """Format prompt for LLM models (e.g., Phi-3)"""
@@ -96,44 +109,61 @@ class APIClient:
         messages: list = None,
     ) -> requests.Response:
         """Make secure API requests with retry and validation."""
+        self.logger.info("Starting new API request")
+        
         if not self.config.rate_limiter.can_make_request():
+            self.logger.warning("Rate limit exceeded")
             raise ValueError("Rate limit exceeded")
 
         try:
-            url = f"{self.config.base_url}/{self.model_name}/gpu{self.gpu_id}/generate"
+            # Update URL format to match example
+            url = f"{self.config.base_url}/{self.model_name}/generate"
+            self.logger.debug(f"Request URL: {url}")
             
             # Format input based on model type
             if self.model_type == "TGI_VLM":
                 formatted_input = self.format_vlm_prompt(prompt, image_data, messages)
             else:
                 formatted_input = self.format_llm_prompt(prompt, messages)
+            
+            self.logger.debug(f"Formatted input: {formatted_input}")
 
             payload = {
                 "inputs": formatted_input,
-                "parameters": {
-                    "max_new_tokens": min(max(1, parameters.get("max_new_tokens", 150)), 500),
-                    "temperature": min(max(0.0, parameters.get("temperature", 0.7)), 1.0),
-                    "top_p": min(max(0.0, parameters.get("top_p", 0.95)), 1.0),
-                    "top_k": min(max(1, parameters.get("top_k", 50)), 100),
-                    "repetition_penalty": min(max(1.0, parameters.get("repetition_penalty", 1.1)), 2.0)
-                }
+                "parameters": parameters
             }
+            
+            headers = {
+                "Authorization": f"Bearer {self.config.token}",
+                "Content-Type": "application/json",
+            }
+            
+            # Log request details (excluding sensitive data)
+            self.logger.info(f"Making POST request to {url}")
+            self.logger.debug(f"Headers (sanitized): {{'Authorization': 'Bearer ***', 'Content-Type': {headers['Content-Type']}}}")
+            self.logger.debug(f"Payload: {json.dumps(payload, indent=2)}")
             
             response = self.session.post(
                 url=url,
-                headers={
-                    "Authorization": f"Bearer {self.config.token}",
-                    "Content-Type": "application/json",
-                },
+                headers=headers,
                 json=payload,
                 timeout=180,
                 verify=True,
             )
 
+            self.logger.info(f"Response status code: {response.status_code}")
+            self.logger.debug(f"Response headers: {dict(response.headers)}")
+            self.logger.debug(f"Response content: {response.text[:500]}...")  # Log first 500 chars
+
             response.raise_for_status()
             return response
+
         except requests.exceptions.RequestException as e:
+            self.logger.error(f"Request failed: {str(e)}")
             if hasattr(e, "response"):
+                self.logger.error(f"Response status code: {e.response.status_code}")
+                self.logger.error(f"Response content: {e.response.text}")
+                
                 if e.response.status_code == 401:
                     raise ValueError("Invalid token")
                 elif e.response.status_code == 429:
@@ -428,6 +458,48 @@ def main():
             border-radius: 8px;
             border: none;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        /* Chat container */
+        .stChatFloatingInputContainer {
+            bottom: 20px !important;
+            padding: 1rem !important;
+            background: white !important;
+            box-shadow: 0 -4px 6px rgba(0,0,0,0.05) !important;
+        }
+        
+        /* Chat messages */
+        .stChatMessage {
+            background-color: #f8f9fa !important;
+            border-radius: 15px !important;
+            padding: 15px !important;
+            margin: 10px 0 !important;
+            max-width: 80% !important;
+        }
+        
+        .stChatMessage.user {
+            background-color: #e3f2fd !important;
+            margin-left: auto !important;
+        }
+        
+        .stChatMessage.assistant {
+            background-color: #f3e5f5 !important;
+            margin-right: auto !important;
+        }
+        
+        /* Chat input */
+        .stChatInputContainer {
+            padding: 10px !important;
+            border-radius: 10px !important;
+            border: 1px solid #e0e0e0 !important;
+            background: white !important;
+        }
+        
+        .stTextInput > div > div > input {
+            border-radius: 20px !important;
+            padding: 10px 20px !important;
+            border: 2px solid var(--primary-color) !important;
+            background: white !important;
         }
         </style>
         """,
