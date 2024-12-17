@@ -34,7 +34,12 @@ class TGIClient:
         try:
             response = requests.post(f"{self.base_url}/generate", headers=self.headers, json=payload)
             response.raise_for_status()
-            return response.json().get("generated_text", "No response text available")
+            
+            # Handle the response data correctly
+            response_data = response.json()
+            if isinstance(response_data, list) and len(response_data) > 0:
+                return response_data[0].get("generated_text", "No response text available")
+            return "No response text available"
         except Exception as e:
             return f"Error: {str(e)}"
 
@@ -47,22 +52,33 @@ def initialize_session_state():
 def display_chat():
     st.title("Chat Interface")
     
-    # Display chat messages
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.write(message["content"])
+    # Create a container for chat messages with a fixed height
+    chat_container = st.container()
     
-    # Chat input
-    if prompt := st.chat_input("What would you like to know?"):
+    # Create a container for the input at the bottom
+    input_container = st.container()
+    
+    # Handle input first (at the bottom)
+    with input_container:
+        prompt = st.chat_input("What would you like to know?")
+        
+    # Display chat messages in the container above
+    with chat_container:
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.write(message["content"])
+    
+    # Handle the response after input
+    if prompt:
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.write(prompt)
+        with chat_container:
+            with st.chat_message("user"):
+                st.write(prompt)
             
-        # Get bot response
-        with st.chat_message("assistant"):
-            response = st.session_state.client.generate_response(st.session_state.messages)
-            st.write(response)
-            st.session_state.messages.append({"role": "assistant", "content": response})
+            with st.chat_message("assistant"):
+                response = st.session_state.client.generate_response(st.session_state.messages)
+                st.write(response)
+                st.session_state.messages.append({"role": "assistant", "content": response})
 
 def display_api_docs():
     st.title("API Documentation")
