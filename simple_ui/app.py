@@ -1,25 +1,58 @@
 import streamlit as st
 import httpx
-import asyncio
 import json
+from typing import List, Dict, Optional, AsyncGenerator
 
-class TGIClient:
-    def __init__(self, base_url: str, token: str):
+# Page config
+st.set_page_config(page_title="AI Chat Interface", page_icon="🤖", layout="wide")
+
+# System message and model config
+SYSTEM_MESSAGE = """
+You are a helpful and knowledgeable AI assistant.
+Your name is Hermes-2.
+Address all members in the conversation clearly and professionally.
+Use markdown formatting when appropriate, especially for code blocks.
+"""
+
+MODEL_CONFIG = {
+    'avatar': "🤖",
+}
+
+class Conversation:
+    def __init__(self, memory_size: int = 5):
+        self.messages: List[Dict[str, str]] = []
+        self.memory_size = memory_size
+
+    def add_message(self, role: str, content: str):
+        self.messages.append({"role": role, "content": content})
+        # Keep only the last N messages
+        self.messages = self.messages[-self.memory_size:]
+
+    def format_for_tgi(self) -> str:
+        formatted_messages = "\n".join([
+            f"{msg['role'].capitalize()}: {msg['content']}" 
+            for msg in self.messages[-self.memory_size:]
+        ])
+        return formatted_messages
+
+    def clear(self):
+        self.messages = []
+
+class TGIModelManager:
+    def __init__(self, base_url: str, token: str, system_message: str):
         self.base_url = base_url
         self.headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
         }
+        self.system_message = system_message
     
-    def generate_stream(self, messages):
-        prompt = "<|system|>\nYou are a helpful AI assistant.\n<|end|>\n"
-        for msg in messages:
-            prompt += f"<|{msg['role']}|>\n{msg['content']}\n<|end|>\n"
-        prompt += "<|assistant|>\n"
+    async def generate_stream(self, messages: str) -> AsyncGenerator[str, None]:
+        prompt = f"{self.system_message}\n\n{messages}"
         
-        last_text = ""
-        with httpx.Client() as client:
-            response = client.post(
+        async with httpx.AsyncClient() as client:
+            async with client.stream(
+                'POST',
                 f"{self.base_url}/generate",
                 headers=self.headers,
                 json={
@@ -29,66 +62,113 @@ class TGIClient:
                         "stream": True
                     }
                 },
-                timeout=60,
-                stream=True
-            )
-            response.raise_for_status()
-            
-            for line in response.iter_lines():
-                if line:
-                    try:
-                        json_response = json.loads(line)
-                        if isinstance(json_response, list) and json_response:
-                            text = json_response[0].get("generated_text", "")
-                            # Get only the new content
-                            new_text = text[len(prompt):].strip()
-                            # Yield only the delta (new tokens)
-                            if new_text != last_text:
-                                delta = new_text[len(last_text):]
-                                last_text = new_text
-                                yield delta
-                    except json.JSONDecodeError:
-                        continue
+                timeout=60
+            ) as response:
+                response.raise_for_status()
+                last_text = ""
+                
+                async for line in response.aiter_lines():
+                    if line:
+                        try:
+                            json_response = json.loads(line)
+                            if isinstance(json_response, list) and json_response:
+                                text = json_response[0].get("generated_text", "")
+                                new_text = text[len(prompt):].strip()
+                                if new_text != last_text:
+                                    delta = new_text[len(last_text):]
+                                    last_text = new_text
+                                    yield delta
+                        except json.JSONDecodeError:
+                            continue
 
-def initialize_session_state():
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-    if "client" not in st.session_state:
-        st.session_state.client = None
-
-def main():
-    st.title("🤖 AI Chat Interface")
+def get_help():
+    return """
+    ### Hello! 👋
+    I'm an AI assistant that can help you with various tasks. Here are some commands:
+    - `/help`: Shows this help message
+    - `/clear`: Clears the chat history
+    - `/about`: Shows information about this app
     
-    initialize_session_state()
-    
-    # First time setup
-    if not st.session_state.client:
-        with st.form("setup_form"):
-            base_url = st.text_input("Base URL:", placeholder="http://localhost:8000/your-model/gpu0")
-            api_token = st.text_input("API Token:", type="password")
-            if st.form_submit_button("Connect"):
-                if base_url and api_token:
-                    st.session_state.client = TGIClient(base_url, api_token)
-                    st.rerun()
-        return
+    Or just type your message and I'll respond!
+    """
 
-    # Display chat messages
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+def about_app():
+    return """
+    ### About This App
+    This is an AI chat interface powered by the TGI (Text Generation Inference) model.
+    It provides streaming responses and maintains conversation context.
+    """
 
-    # Chat input
-    if prompt := st.chat_input("Type your message..."):
-        # Add user message
-        st.session_state.messages.append({"role": "user", "content": prompt})
+# Initialize session state
+if "conversation" not in st.session_state:
+    st.session_state.conversation = Conversation()
+if "model_manager" not in st.session_state:
+    st.session_state.model_manager = None
+
+# Setup form if not configured
+if not st.session_state.model_manager:
+    st.title("🤖 AI Chat Interface - Setup")
+    with st.form("setup_form"):
+        base_url = st.text_input(
+            "Base URL:", 
+            placeholder="http://localhost:8000/your-model/gpu0",
+            help="The base URL of your TGI model endpoint"
+        )
+        api_token = st.text_input(
+            "API Token:", 
+            type="password",
+            help="Your API authentication token"
+        )
+        if st.form_submit_button("Connect"):
+            if base_url and api_token:
+                st.session_state.model_manager = TGIModelManager(
+                    base_url=base_url,
+                    token=api_token,
+                    system_message=SYSTEM_MESSAGE
+                )
+                st.rerun()
+            else:
+                st.error("Please provide both Base URL and API Token.")
+    st.stop()
+
+# Main chat interface
+st.title("🤖 AI Chat Interface")
+
+# Display chat history
+for message in st.session_state.conversation.messages:
+    with st.chat_message(
+        message["role"], 
+        avatar=MODEL_CONFIG['avatar'] if message["role"] == "assistant" else None
+    ):
+        st.markdown(message["content"])
+
+# Chat input
+if prompt := st.chat_input("Type your message..."):
+    # Handle commands
+    if prompt.startswith('/'):
+        command = prompt[1:]
+        command_response = None
+        if command == "help":
+            command_response = get_help()
+        elif command == "clear":
+            st.session_state.conversation.clear()
+            st.rerun()
+        elif command == "about":
+            command_response = about_app()
+        
+        if command_response:
+            with st.chat_message("system", avatar="ℹ️"):
+                st.write(command_response)
+    else:
+        # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
-
+        st.session_state.conversation.add_message("user", prompt)
+        
         # Generate and display assistant response
-        with st.chat_message("assistant"):
-            stream = st.session_state.client.generate_stream(st.session_state.messages)
+        with st.chat_message("assistant", avatar=MODEL_CONFIG['avatar']):
+            stream = st.session_state.model_manager.generate_stream(
+                st.session_state.conversation.format_for_tgi()
+            )
             response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
-
-if __name__ == "__main__":
-    main()
+            st.session_state.conversation.add_message("assistant", response)
