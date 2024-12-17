@@ -1,6 +1,7 @@
 import streamlit as st
 import requests
 import time
+import threading
 
 st.set_page_config(
     page_title="LLM Text generation Demo on Intel XPUs",
@@ -62,14 +63,22 @@ st.markdown(
         background-color: #f8f9fa;
         padding: 2rem;
         border-radius: 10px;
-        border-left: 5px solid #1E88E5;
-        margin-top: 1rem;
-        margin-bottom: 1rem;
+        margin-top: 2rem;
+    }
+    
+    .generated-text pre {
+        background-color: #e9ecef;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+        white-space: pre-wrap;
     }
     
     .generated-text h3 {
-        margin-top: 0 !important;
+        color: #1E88E5;
+        margin-top: 1.5rem !important;
         margin-bottom: 1rem !important;
+        font-size: 1.2rem !important;
     }
     
     /* API docs */
@@ -111,6 +120,11 @@ st.markdown(
         font-size: 0.9rem;
         margin: 1rem 0;
         color: #1565C0;
+        transition: all 0.3s ease;
+    }
+    .sample-prompt-box:hover {
+        background-color: #BBDEFB;
+        transform: translateX(5px);
     }
 </style>
 """,
@@ -147,25 +161,16 @@ with tab1:
             st.success("✅ Connected to TGI server")
             max_tokens = st.slider("Max New Tokens", 10, 1000, 200)
             temperature = st.slider("Temperature", 0.0, 2.0, 0.7)
-            if st.button("Use Sample Prompt"):
-                st.session_state.prompt = SAMPLE_PROMPT
-            st.markdown(
-                """
-            <style>
-            .sample-prompt-box {
-                background-color: #E3F2FD;
-                border-left: 5px solid #1E88E5;
-                padding: 1rem;
-                border-radius: 4px;
-                font-size: 0.9rem;
-                margin: 1rem 0;
-                color: #1565C0;
-            }
-            </style>
-            """,
-                unsafe_allow_html=True,
-            )
-
+            col1, col2 = st.columns([1, 4])
+            with col1:
+                if st.button("Use Sample Prompt"):
+                    st.session_state.prompt = SAMPLE_PROMPT
+                    st.experimental_rerun()
+            with col2:
+                if st.button("Clear"):
+                    st.session_state.prompt = ""
+                    st.experimental_rerun()
+            
             prompt = st.text_area(
                 "Enter your prompt:",
                 height=100,
@@ -176,47 +181,54 @@ with tab1:
             st.markdown(SAMPLE_PROMPT)
             st.markdown("</div>", unsafe_allow_html=True)
 
-            if st.button("Generate") and prompt:
-                progress_text = st.empty()
-                loading_emojis = ["🤔", "💭", "⚡", "🔮", "✨"]
-                loading_thread_active = True
+            col1, col2, col3 = st.columns([1, 1, 2])
+            with col2:
+                if st.button("Generate 🚀", use_container_width=True) and prompt:
+                    progress_text = st.empty()
+                    loading_emojis = ["🤔", "💭", "⚡", "🔮", "✨"]
+                    loading_thread_active = True
 
-                def loading_animation():
-                    i = 0
-                    while loading_thread_active:
-                        progress_text.markdown(
-                            f"### Generating {loading_emojis[i % len(loading_emojis)]}"
-                        )
-                        time.sleep(0.3)  # Control animation speed
-                        i += 1
-
-                import threading
-
-                loading_thread = threading.Thread(target=loading_animation)
-                loading_thread.start()
-                try:
-                    response = requests.post(
-                        f"{base_url}/generate",
-                        headers=headers,
-                        json={
-                            "inputs": prompt,
-                            "parameters": {
-                                "max_new_tokens": max_tokens,
-                                "temperature": temperature,
+                    def loading_animation():
+                        i = 0
+                        while loading_thread_active:
+                            progress_text.markdown(
+                                f"### Generating {loading_emojis[i % len(loading_emojis)]}"
+                            )
+                            time.sleep(0.3)
+                            i += 1
+                    loading_thread = threading.Thread(target=loading_animation)
+                    loading_thread.start()
+                    try:
+                        response = requests.post(
+                            f"{base_url}/generate",
+                            headers=headers,
+                            json={
+                                "inputs": prompt,
+                                "parameters": {
+                                    "max_new_tokens": max_tokens,
+                                    "temperature": temperature,
+                                },
                             },
-                        },
-                        timeout=30,
-                    )
-                    loading_thread_active = False
-                    loading_thread.join()
-                    progress_text.empty()
-                    result = response.json()
-                    st.markdown('<div class="generated-text">', unsafe_allow_html=True)
-                    st.markdown("### Generated Text:")
-                    st.write(result[0]["generated_text"])
-                    st.markdown("</div>", unsafe_allow_html=True)
-                except requests.exceptions.RequestException as e:
-                    st.error(f"Generation Error: {str(e)}")
+                            timeout=60,
+                        )
+                        response.raise_for_status()
+                        result = response.json()
+                        if not isinstance(result, list) or len(result) == 0 or "generated_text" not in result[0]:
+                            raise ValueError("Unexpected response format from the server")
+                        st.markdown("---") 
+                        st.markdown('<div class="generated-text">', unsafe_allow_html=True)
+                        st.markdown("### Your Prompt:")
+                        st.markdown(f"```\n{prompt}\n```")
+                        st.markdown("### Generated Response:")
+                        generated_text = result[0]["generated_text"].replace('```', '\\```')
+                        st.markdown(generated_text)
+                        st.markdown("</div>", unsafe_allow_html=True)
+                    except (requests.exceptions.RequestException, ValueError) as e:
+                        st.error(f"Generation Error: {str(e)}")
+                    finally:
+                        loading_thread_active = False
+                        loading_thread.join()
+                        progress_text.empty()
         except requests.exceptions.RequestException as e:
             st.error(f"Connection Error: {str(e)}")
     else:
@@ -224,30 +236,13 @@ with tab1:
 
 with tab2:
     st.title("📚 API Documentation")
-
-    # Read and display API.md
     try:
         with open("API.md", "r") as f:
             api_docs = f.read()
-
-        # Add some styling to the docs
-        st.markdown(
-            """
-        <style>
-        .api-docs {
-            padding: 2rem;
-            background-color: #f8f9fa;
-            border-radius: 10px;
-        }
-        </style>
-        """,
-            unsafe_allow_html=True,
-        )
 
         with st.container():
             st.markdown('<div class="api-docs">', unsafe_allow_html=True)
             st.markdown(api_docs)
             st.markdown("</div>", unsafe_allow_html=True)
-
     except FileNotFoundError:
         st.error("API documentation file (API.md) not found!")
